@@ -1,4 +1,4 @@
-// Updated server.js – Supabase Storage, ONLYOFFICE callback, JWT auth
+// Updated server.js – Supabase Storage, ONLYOFFICE callback, JWT auth
 // ---------------------------------------------------------------
 // Prerequisites
 // 1.  npm i express cors jsonwebtoken node-fetch@2 @supabase/supabase-js dotenv multer
@@ -13,11 +13,11 @@ const express  = require('express');
 const cors     = require('cors');
 const jwt      = require('jsonwebtoken');
 const fetch    = require('node-fetch');
-const multer   = require('multer');          // for raw uploads
+const multer   = require('multer');
 const { createClient } = require('@supabase/supabase-js');
 
 // ---------------------------------------------------------------------------
-// Supabase service‑role client (full read/write, NEVER expose to frontend)
+// Supabase service‑role client
 // ---------------------------------------------------------------------------
 const supaSrv = createClient(
   process.env.SUPABASE_URL,
@@ -25,7 +25,6 @@ const supaSrv = createClient(
   { auth: { persistSession: false } }
 );
 
-// Helpers to keep bucket/key logic in one place
 const BUCKET = 'accordwise-files';
 const toBucketPath = (relPath) => `${BUCKET}/${relPath.replace(/^\/+/, '')}`;
 
@@ -34,16 +33,16 @@ async function uploadBuffer(relPath, buffer, mime, upsert = true) {
   return supaSrv.storage.from(BUCKET).upload(key, buffer, { contentType: mime, upsert });
 }
 
-async function signedUrl(relPath, expires = 60 * 30) {   // default 30 min
+async function signedUrl(relPath, expires = 60 * 30) {
   const key = relPath.replace(/^\/+/, '');
   return supaSrv.storage.from(BUCKET).createSignedUrl(key, expires);
 }
 
-// ---------------------------------------------------------------------------
-// Express setup
-// ---------------------------------------------------------------------------
 const app  = express();
 const PORT = process.env.PORT || 3000;
+
+// 👇 Add this constant to point to your ONLYOFFICE document server base URL
+const ONLYOFFICE_BASE = 'https://kind-ambition-production-57fa.up.railway.app';
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -62,14 +61,13 @@ function verifyToken(req, res, next) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Raw upload endpoint – replaces local‑disk /upload
-// Frontend posts FormData with:  file=<binary>,  path=<org/templates/my.docx>
+// 1. Upload endpoint – for binary files into Supabase Storage
 // ---------------------------------------------------------------------------
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } }).single('file');
 
 app.post('/upload', upload, async (req, res) => {
   try {
-    const relPath = req.body.path;           // e.g. org123/templates/temp123.docx
+    const relPath = req.body.path;
     if (!relPath || !req.file) return res.status(400).json({ error: 'Missing file or path' });
 
     const { error } = await uploadBuffer(relPath, req.file.buffer, req.file.mimetype, true);
@@ -83,10 +81,10 @@ app.post('/upload', upload, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. Signed URL endpoint – frontend fetches before downloading or viewing
+// 2. Signed URL endpoint
 // ---------------------------------------------------------------------------
 app.get('/signed-url', verifyToken, async (req, res) => {
-  const { bucketPath, expires } = req.query;   // bucketPath = accordwise-files/org/...
+  const { bucketPath, expires } = req.query;
   if (!bucketPath) return res.status(400).json({ error: 'Missing bucketPath' });
   const key = bucketPath.replace(`${BUCKET}/`, '');
   const { data, error } = await signedUrl(key, Number(expires) || 1800);
@@ -95,20 +93,27 @@ app.get('/signed-url', verifyToken, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// 3. ONLYOFFICE callback – receives updated file & overwrites in Storage
+// 3. ONLYOFFICE callback – FIXED version for relative `url`
 // ---------------------------------------------------------------------------
 app.post('/onlyoffice-callback', express.json({ limit: '50mb' }), async (req, res) => {
   try {
     const { status, url, storagePath } = req.body;
-    if (status !== 2) return res.sendStatus(200);  // only save when ready
+    if (status !== 2) return res.sendStatus(200); // Only save when ready
 
-    const buffer = await fetch(url).then(r => r.buffer());
+    const absoluteUrl = /^https?:\/\//i.test(url)
+      ? url
+      : ONLYOFFICE_BASE.replace(/\/$/, '') + url;
+
+    console.log('[ONLYOFFICE callback] Fetching from:', absoluteUrl);
+
+    const buffer = await fetch(absoluteUrl).then(r => r.buffer());
+
     const key = storagePath.replace(`${BUCKET}/`, '');
-
     const { error } = await supaSrv.storage.from(BUCKET).upload(key, buffer, {
       upsert: true,
       contentType: 'application/octet-stream'
     });
+
     if (error) throw error;
     return res.sendStatus(200);
   } catch (err) {
@@ -118,10 +123,10 @@ app.post('/onlyoffice-callback', express.json({ limit: '50mb' }), async (req, re
 });
 
 // ---------------------------------------------------------------------------
-// 4. Demo route to generate a token & give signedUrl to frontend
+// 4. Example token generator for testing
 // ---------------------------------------------------------------------------
 app.get('/generate-doc-token', (req, res) => {
-  const { bucketPath, userEmail } = req.query;   // minimal example
+  const { bucketPath, userEmail } = req.query;
   if (!bucketPath) return res.status(400).json({ error: 'bucketPath missing' });
   const key = bucketPath.replace(`${BUCKET}/`, '');
 
@@ -141,13 +146,14 @@ app.get('/generate-doc-token', (req, res) => {
         mode: 'view'
       }
     };
+
     const token = jwt.sign(config, process.env.JWT_SECRET);
     res.json({ token, config });
   });
 });
 
 // ---------------------------------------------------------------------------
-// Catch‑all error middleware
+// Catch‑all error handler
 // ---------------------------------------------------------------------------
 app.use((err, _req, res, _next) => {
   console.error('Unhandled', err);
@@ -155,15 +161,3 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
-
-/*
-====================================================================
-Key Changes vs. original server.js
---------------------------------------------------------------------
-1. Added dotenv and @supabase/supabase-js; removed fs/local‑disk writes.
-2. /upload now streams file into Supabase Storage (memory upload via multer).
-3. /signed-url returns time‑limited link so the frontend & ONLYOFFICE can read private files.
-4. /onlyoffice-callback replaces local overwrite with Storage upsert via service‑role.
-5. Added helper functions uploadBuffer & signedUrl for DRY code.
-6. All file paths in DB/front‑end should now be bucket paths: `accordwise-files/org/...`.  
-====================================================================*/
