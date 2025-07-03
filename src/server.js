@@ -49,6 +49,19 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+
+const { Document, Packer } = require('docx');      // ← make sure this import exists
+
+app.get('/blank.docx', async (_req, res) => {
+  const emptyDoc = new Document();                 // completely empty document
+  const buffer   = await Packer.toBuffer(emptyDoc);
+
+  res
+    .set('Content-Type',
+         'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    .send(buffer);
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 3.  JWT‑guard for our own API (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
