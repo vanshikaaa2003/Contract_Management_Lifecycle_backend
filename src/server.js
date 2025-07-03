@@ -12,6 +12,8 @@ const cors     = require('cors');
 const jwt      = require('jsonwebtoken');
 const fetch    = require('node-fetch');
 const multer   = require('multer');
+const path     = require('path');                                   /*  A */
+const fs       = require('fs');                                     /*  A */
 const { createClient } = require('@supabase/supabase-js');
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,10 +39,9 @@ async function signedUrl(relPath, expires = 60 * 30) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2.  ONLYOFFICE settings  (←‑‑‑ UPDATED)
+// 2.  ONLYOFFICE settings
 // ─────────────────────────────────────────────────────────────────────────────
-const ONLYOFFICE_BASE        = 'https://53a5fb97.docs.onlyoffice.com';
-
+const ONLYOFFICE_BASE = 'https://53a5fb97.docs.onlyoffice.com';
 
 // ─────────────────────────────────────────────────────────────────────────────
 const app  = express();
@@ -49,35 +50,39 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// ========== A. Send CORS header for *every* static download ================
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  next();
+});
 
-const { Document, Packer } = require('docx');      // ← make sure this import exists
+// ========== B. STATIC DIR & blank.docx helper =============================
+const STATIC_DIR  = path.join(__dirname, '..', 'static');           // backend/static
+const BLANK_PATH  = path.join(STATIC_DIR, 'blank.docx');
 
-const path = require('path');
-const fs   = require('fs');
-
-const BLANK_PATH = path.join(__dirname, 'static', 'blank.docx'); // adjust if needed
-
-app.get('/blank.docx', (req, res, next) => {
-  /** 1. Make sure the file exists */
+// individual route (needed by the front‑end upload placeholder)
+app.get('/blank.docx', (req, res) => {
   if (!fs.existsSync(BLANK_PATH)) {
     console.error('[blank.docx] file missing at', BLANK_PATH);
     return res.status(404).end('blank.docx not found on server');
   }
 
-  /** 2. Set explicit CORS + correct MIME type */
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.type(
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  );
-
-  /** 3. Stream the file (uses zero memory for large files) */
-  const stream = fs.createReadStream(BLANK_PATH);
-  stream.on('error', (err) => {
-    console.error('[blank.docx] stream error:', err);
-    res.status(500).end();
-  });
-  stream.pipe(res);
+  res.type('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  fs.createReadStream(BLANK_PATH)
+    .on('error', (err) => {
+      console.error('[blank.docx] stream error:', err);
+      res.status(500).end();
+    })
+    .pipe(res);
 });
+
+// optional convenience: expose everything inside backend/static at /static/*
+app.use(
+  '/static',
+  express.static(STATIC_DIR, {
+    setHeaders: (res) => res.setHeader('Access-Control-Allow-Origin', '*')
+  })
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3.  JWT‑guard for our own API (unchanged)
@@ -95,7 +100,10 @@ function verifyToken(req, res, next) {
 // ─────────────────────────────────────────────────────────────────────────────
 // 4.  File upload  ➜  Supabase Storage
 // ─────────────────────────────────────────────────────────────────────────────
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } }).single('file');
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits : { fileSize: 50 * 1024 * 1024 }
+}).single('file');
 
 app.post('/upload', upload, async (req, res) => {
   try {
@@ -125,16 +133,16 @@ app.get('/signed-url', verifyToken, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6.  ONLYOFFICE callback  (absolute‑URL fix retained)
+// 6.  ONLYOFFICE callback
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/onlyoffice-callback', async (req, res) => {
   try {
     const { status, url, storagePath } = req.body;
-    if (status !== 2) return res.sendStatus(200);          // save only on “ReadyForSave”
+    if (status !== 2) return res.sendStatus(200); // ReadyForSave only
 
     const absoluteUrl = /^https?:\/\//i.test(url)
       ? url
-      : ONLYOFFICE_BASE.replace(/\/$/, '') + url;          // add host if missing
+      : ONLYOFFICE_BASE.replace(/\/$/, '') + url;
 
     const buffer = await fetch(absoluteUrl).then(r => r.buffer());
     const key    = storagePath.replace(`${BUCKET}/`, '');
@@ -165,10 +173,10 @@ app.get('/generate-doc-token', async (req, res) => {
 
   const config = {
     document: {
-      fileType: 'docx',
-      title: key.split('/').pop(),
-      url: data.signedUrl,
-      key: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      fileType   : 'docx',
+      title      : key.split('/').pop(),
+      url        : data.signedUrl,
+      key        : `${Date.now()}_${Math.random().toString(36).slice(2)}`,
       permissions: { edit: false, download: true }
     },
     editorConfig: {
