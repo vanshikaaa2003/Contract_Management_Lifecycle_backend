@@ -52,13 +52,21 @@ app.use(express.json({ limit: '50mb' }));
 
 const { Document, Packer } = require('docx');      // ← make sure this import exists
 
+const path = require('path');                  // make sure this is required once
+
 app.get('/blank.docx', async (_req, res) => {
-  const emptyDoc = new Document();                 // completely empty document
+  /**
+   * If you prefer *generating* a file each time (no physical file on disk)
+   * keep this block ↓.  Otherwise comment it out and see Option‑B below.
+   */
+  const emptyDoc = new Document();                     // 0‑page document
   const buffer   = await Packer.toBuffer(emptyDoc);
 
   res
-    .set('Content-Type',
-         'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    .setHeader('Access-Control-Allow-Origin', '*')     // CORS ✔
+    .type(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    )
     .send(buffer);
 });
 
