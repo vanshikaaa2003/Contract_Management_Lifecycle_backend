@@ -76,6 +76,7 @@ app.get('/blank.docx', (req, res) => {
     .pipe(res);
 });
 
+
 // optional convenience: expose everything inside backend/static at /static/*
 app.use(
   '/static',
@@ -83,6 +84,41 @@ app.use(
     setHeaders: (res) => res.setHeader('Access-Control-Allow-Origin', '*')
   })
 );
+
+app.post('/copy-template-doc', async (req, res) => {
+  const { sourcePath, destinationPath } = req.body;
+
+  try {
+    const { data: fileData, error: downloadErr } = await supaSrv
+      .storage
+      .from(BUCKET)
+      .download(sourcePath);
+
+    if (downloadErr) {
+      console.error('Error downloading from storage:', downloadErr);
+      return res.status(500).json({ error: downloadErr.message });
+    }
+
+    const { error: uploadErr } = await supaSrv
+      .storage
+      .from(BUCKET)
+      .upload(destinationPath, fileData, {
+        upsert: true,
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      });
+
+    if (uploadErr) {
+      console.error('Error uploading to storage:', uploadErr);
+      return res.status(500).json({ error: uploadErr.message });
+    }
+
+    res.json({ message: 'File copied successfully', destinationPath });
+  } catch (err) {
+    console.error('Unhandled error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3.  JWT‑guard for our own API (unchanged)
