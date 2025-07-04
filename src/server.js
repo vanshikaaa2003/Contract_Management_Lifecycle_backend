@@ -164,8 +164,13 @@ app.get('/signed-url', verifyToken, async (req, res) => {
   if (!bucketPath) return res.status(400).json({ error: 'Missing bucketPath' });
   const key = bucketPath.replace(`${BUCKET}/`, '');
   const { data, error } = await signedUrl(key, Number(expires) || 1800);
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ signedUrl: data.signedUrl });
+  if (error) {
+    if (error.message.includes('Object not found')) {
+      return res.status(200).json({ signedUrl: null, isNew: true });
+    }
+    return res.status(500).json({ error: error.message });
+  }
+  res.json({ signedUrl: data.signedUrl, isNew: false });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,40 +178,51 @@ app.get('/signed-url', verifyToken, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/onlyoffice-callback', async (req, res) => {
   try {
+    console.log('[onlyoffice-callback] Received:', JSON.stringify(req.body, null, 2));
     const { status, url } = req.body;
-
-    if (status !== 2) return res.sendStatus(200); // ReadyToSave only
+    if (status !== 2) {
+      console.log('[onlyoffice-callback] Ignored, status not 2:', { status });
+      return res.sendStatus(200);
+    }
 
     let storagePath = req.body.storagePath;
-
-    // Fallback: try custom location
     if (!storagePath && req.body.editorConfig?.custom?.storagePath) {
       storagePath = req.body.editorConfig.custom.storagePath;
     }
-
     if (!storagePath) {
-      console.error('[callback] No storagePath provided!');
+      console.error('[onlyoffice-callback] No storagePath provided!');
       return res.status(400).json({ error: 'Missing storagePath' });
     }
 
     const absoluteUrl = /^https?:\/\//i.test(url)
       ? url
       : ONLYOFFICE_BASE.replace(/\/$/, '') + url;
+    console.log('[onlyoffice-callback] Fetching document:', { absoluteUrl, storagePath });
 
-    const buffer = await fetch(absoluteUrl).then(r => r.buffer());
+    const response = await fetch(absoluteUrl);
+    if (!response.ok) {
+      console.error('[onlyoffice-callback] Fetch failed:', { status: response.status, statusText: response.statusText });
+      throw new Error(`Failed to fetch document: ${response.statusText}`);
+    }
+    const buffer = await response.buffer();
     const key = storagePath.replace(`${BUCKET}/`, '');
 
+    console.log('[onlyoffice-callback] Uploading to Supabase:', { key });
     const { error } = await supaSrv.storage.from(BUCKET).upload(key, buffer, {
       upsert: true,
       contentType: 'application/octet-stream'
     });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[onlyoffice-callback] Upload error:', error);
+      throw error;
+    }
 
+    console.log('[onlyoffice-callback] Document saved successfully:', { storagePath });
     res.sendStatus(200);
   } catch (err) {
-    console.error('[ONLYOFFICE callback] ', err);
-    res.status(500).end();
+    console.error('[onlyoffice-callback] Error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
