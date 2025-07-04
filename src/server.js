@@ -173,20 +173,34 @@ app.get('/signed-url', verifyToken, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/onlyoffice-callback', async (req, res) => {
   try {
-    const { status, url, storagePath } = req.body;
-    if (status !== 2) return res.sendStatus(200); // ReadyForSave only
+    const { status, url } = req.body;
+
+    if (status !== 2) return res.sendStatus(200); // ReadyToSave only
+
+    let storagePath = req.body.storagePath;
+
+    // Fallback: try custom location
+    if (!storagePath && req.body.editorConfig?.custom?.storagePath) {
+      storagePath = req.body.editorConfig.custom.storagePath;
+    }
+
+    if (!storagePath) {
+      console.error('[callback] No storagePath provided!');
+      return res.status(400).json({ error: 'Missing storagePath' });
+    }
 
     const absoluteUrl = /^https?:\/\//i.test(url)
       ? url
       : ONLYOFFICE_BASE.replace(/\/$/, '') + url;
 
     const buffer = await fetch(absoluteUrl).then(r => r.buffer());
-    const key    = storagePath.replace(`${BUCKET}/`, '');
+    const key = storagePath.replace(`${BUCKET}/`, '');
 
     const { error } = await supaSrv.storage.from(BUCKET).upload(key, buffer, {
       upsert: true,
       contentType: 'application/octet-stream'
     });
+
     if (error) throw error;
 
     res.sendStatus(200);
@@ -195,6 +209,7 @@ app.post('/onlyoffice-callback', async (req, res) => {
     res.status(500).end();
   }
 });
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 7.  Helper route – generate editor config + signed JWT  (for testing)
