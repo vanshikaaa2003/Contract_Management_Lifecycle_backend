@@ -159,6 +159,11 @@ app.post('/onlyoffice-callback', async (req, res) => {
   }
 });
 
+app.get('/health', (req, res) => {
+  res.status(200).send('Backend is healthy');
+});
+
+
 // Optional: editor test route
 app.get('/generate-doc-token', async (req, res) => {
   const { bucketPath, userEmail } = req.query;
