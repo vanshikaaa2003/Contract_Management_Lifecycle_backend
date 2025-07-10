@@ -127,7 +127,7 @@ app.get('/signed-url', async (req, res) => {
 
     const key = bucketPath.replace(/^accordwise-files\//, '');
 
-    const { data, error } = await supabase
+    const { data, error } = await supaSrv
       .storage
       .from('accordwise-files')
       .createSignedUrl(key, Number(expires) || 1800); // default 30 minutes
@@ -146,6 +146,7 @@ app.get('/signed-url', async (req, res) => {
     res.status(500).json({ error: 'Unexpected server error' });
   }
 });
+
 
 
 // ONLYOFFICE callback route
