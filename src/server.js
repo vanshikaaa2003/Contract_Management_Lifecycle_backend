@@ -37,7 +37,7 @@ const PORT = process.env.PORT || 3000;
 
 // CORS setup for your deployed frontend
 app.use(cors({
-  origin: 'http://accordwise-frontend.z2wjeuucks-xlm41xrvw6dy.p.temp-site.link',
+  origin: 'accordwise-frontend.z2wjeuucks-xlm41xrvw6dy.p.temp-site.link',
   credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
