@@ -65,7 +65,7 @@ const BLANK_PATH = path.join(STATIC_DIR, 'blank.docx');
 app.get('/blank.docx', (req, res) => {
   if (!fs.existsSync(BLANK_PATH)) {
     console.error('[blank.docx] Missing at', BLANK_PATH);
-    return res.status(404).send('blank.docx not found');
+    return res.status(404).json({ error: 'blank.docx not found' });
   }
   res.type('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
   fs.createReadStream(BLANK_PATH).pipe(res);
@@ -152,7 +152,7 @@ app.get('/signed-url', async (req, res) => {
     res.json({ signedUrl: data.signedUrl, isNew: false });
   } catch (err) {
     console.error('❌ Signed URL error:', err.message, err.stack);
-    return res.status(500).json({ error: 'Unexpected server error' });
+    res.status(500).json({ error: 'Unexpected server error' });
   }
 });
 
@@ -319,6 +319,7 @@ app.post('/test-onlyoffice-callback', async (req, res) => {
 // Test ONLYOFFICE server connectivity
 app.get('/test-onlyoffice', async (req, res) => {
   try {
+    console.log(`Testing ONLYOFFICE connectivity to ${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`);
     const response = await fetch(`${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`, {
       method: 'HEAD',
       timeout: 5000
@@ -330,13 +331,13 @@ app.get('/test-onlyoffice', async (req, res) => {
     console.error('❌ ONLYOFFICE server not reachable:', response.status, response.statusText);
     return res.status(500).json({ error: `ONLYOFFICE server not reachable: ${response.statusText}` });
   } catch (err) {
-    console.error('❌ ONLYOFFICE server test failed:', err.message);
+    console.error('❌ ONLYOFFICE server test failed:', err.message, err.stack);
     return res.status(500).json({ error: `Failed to reach ONLYOFFICE server: ${err.message}` });
   }
 });
 
 app.get('/health', (req, res) => {
-  res.status(200).send('Backend is healthy');
+  res.status(200).json({ status: 'Backend is healthy' });
 });
 
 app.get('/generate-doc-token', async (req, res) => {
@@ -368,7 +369,7 @@ app.get('/generate-doc-token', async (req, res) => {
   res.json({ token, config });
 });
 
-app.use((err, _req, res, _next) => {
+app.use((err, req, res, next) => {
   console.error('❌ Unhandled error:', err.message, err.stack);
   res.status(500).json({ error: err.message });
 });
