@@ -152,7 +152,7 @@ app.get('/signed-url', async (req, res) => {
     res.json({ signedUrl: data.signedUrl, isNew: false });
   } catch (err) {
     console.error('❌ Signed URL error:', err.message, err.stack);
-    res.status(500).json({ error: 'Unexpected server error' });
+    return res.status(500).json({ error: 'Unexpected server error' });
   }
 });
 
@@ -170,7 +170,6 @@ app.post('/onlyoffice-callback', async (req, res) => {
       status: body.status,
       storagePath: body?.editorConfig?.custom?.storagePath || body?.custom_storagePath
     });
-    // Keep only last 10 callbacks
     if (recentCallbacks.length > 10) recentCallbacks.shift();
 
     // Verify JWT token if present
@@ -197,14 +196,12 @@ app.post('/onlyoffice-callback', async (req, res) => {
         return res.status(400).json({ error: 'Invalid ONLYOFFICE callback payload: missing url or key' });
       }
 
-      // Get storagePath
       const storagePath = body?.editorConfig?.custom?.storagePath || body?.custom_storagePath;
       if (!storagePath) {
         console.error('❌ Missing storagePath in callback');
         return res.status(400).json({ error: 'Missing storagePath in callback' });
       }
 
-      // Fetch the updated document
       console.log('📥 Fetching document from:', body.url);
       try {
         const documentResponse = await fetch(body.url, {
@@ -217,7 +214,6 @@ app.post('/onlyoffice-callback', async (req, res) => {
 
         const buffer = await documentResponse.buffer();
 
-        // Upload to Supabase
         console.log('📤 Uploading to Supabase at:', storagePath);
         const uploadPath = storagePath.replace(/^accordwise-files\//, '');
         const { error: uploadError } = await uploadBuffer(
@@ -291,7 +287,6 @@ app.post('/test-onlyoffice-callback', async (req, res) => {
 
     console.log('📩 Simulating callback with payload:', JSON.stringify(testPayload, null, 2));
 
-    // Simulate fetch and upload
     const documentResponse = await fetch(testPayload.url, {
       headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
     });
@@ -318,6 +313,25 @@ app.post('/test-onlyoffice-callback', async (req, res) => {
   } catch (err) {
     console.error('⚠️ Error in /test-onlyoffice-callback:', err.message, err.stack);
     return res.status(500).json({ error: `Test callback failed: ${err.message}` });
+  }
+});
+
+// Test ONLYOFFICE server connectivity
+app.get('/test-onlyoffice', async (req, res) => {
+  try {
+    const response = await fetch(`${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`, {
+      method: 'HEAD',
+      timeout: 5000
+    });
+    if (response.ok) {
+      console.log('✅ ONLYOFFICE server reachable at', ONLYOFFICE_BASE);
+      return res.status(200).json({ status: 'reachable' });
+    }
+    console.error('❌ ONLYOFFICE server not reachable:', response.status, response.statusText);
+    return res.status(500).json({ error: `ONLYOFFICE server not reachable: ${response.statusText}` });
+  } catch (err) {
+    console.error('❌ ONLYOFFICE server test failed:', err.message);
+    return res.status(500).json({ error: `Failed to reach ONLYOFFICE server: ${err.message}` });
   }
 });
 
