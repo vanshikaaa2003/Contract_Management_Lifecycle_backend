@@ -95,6 +95,12 @@ function verifyToken(req, res, next) {
     next();
   });
 }
+const cors = require('cors');
+app.use(cors({
+  origin: 'accordwise-frontend.z2wjeuucks-xlm41xrvw6dy.p.temp-site.link',
+  credentials: true
+}));
+
 
 // Upload to Supabase
 const upload = multer({
@@ -115,21 +121,37 @@ app.post('/upload', upload, async (req, res) => {
 });
 
 // Signed URL generation
-app.get('/signed-url', verifyToken, async (req, res) => {
-  const { bucketPath, expires } = req.query;
-  if (!bucketPath) return res.status(400).json({ error: 'Missing bucketPath' });
+// 👇 Remove JWT auth middleware (if you want public access)
+app.get('/signed-url', async (req, res) => {
+  try {
+    const { bucketPath, expires } = req.query;
 
-  const key = bucketPath.replace(`${BUCKET}/`, '');
-  const { data, error } = await signedUrl(key, Number(expires) || 1800);
-  if (error) {
-    if (error.message.includes('Object not found')) {
-      return res.status(200).json({ signedUrl: null, isNew: true });
+    if (!bucketPath) {
+      return res.status(400).json({ error: 'Missing bucketPath' });
     }
-    return res.status(500).json({ error: error.message });
-  }
 
-  res.json({ signedUrl: data.signedUrl, isNew: false });
+    const key = bucketPath.replace(/^accordwise-files\//, '');
+
+    const { data, error } = await supabase
+      .storage
+      .from('accordwise-files')
+      .createSignedUrl(key, Number(expires) || 1800); // default 30 minutes
+
+    if (error) {
+      if (error.message.includes('Object not found')) {
+        return res.status(200).json({ signedUrl: null, isNew: true });
+      }
+      return res.status(500).json({ error: error.message });
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Allow any origin
+    res.json({ signedUrl: data.signedUrl, isNew: false });
+  } catch (err) {
+    console.error('Signed URL error:', err);
+    res.status(500).json({ error: 'Unexpected server error' });
+  }
 });
+
 
 // ONLYOFFICE callback route
 app.post('/onlyoffice-callback', async (req, res) => {
