@@ -149,8 +149,6 @@ app.get('/signed-url', async (req, res) => {
 
 
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-
 // ONLYOFFICE callback endpoint
 app.post('/onlyoffice-callback', async (req, res) => {
   const status = req.body.status;
@@ -165,7 +163,7 @@ app.post('/onlyoffice-callback', async (req, res) => {
       const response = await fetch(downloadUrl);
       const buffer = await response.buffer();
 
-      const { error } = await supabase.storage
+      const { error } = await supaSrv.storage
         .from('accordwise-files')
         .upload(storagePath, buffer, {
           upsert: true,
