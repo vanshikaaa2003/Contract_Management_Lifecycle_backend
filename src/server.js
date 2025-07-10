@@ -32,6 +32,9 @@ async function signedUrl(relPath, expires = 60 * 30) {
 const ONLYOFFICE_BASE = 'http://24.144.90.236';
 const JWT_SECRET = process.env.JWT_SECRET || '90622eb052254ec9a1592d118d81b6c7';
 
+// Store recent callbacks for verification (in-memory, use DB in production)
+const recentCallbacks = [];
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -160,6 +163,16 @@ app.post('/onlyoffice-callback', async (req, res) => {
     console.log('📩 ONLYOFFICE callback received at', new Date().toISOString(), ':', JSON.stringify(body, null, 2));
     console.log('📩 Request headers:', JSON.stringify(req.headers, null, 2));
 
+    // Store callback for verification
+    recentCallbacks.push({
+      timestamp: Date.now(),
+      key: body.key,
+      status: body.status,
+      storagePath: body?.editorConfig?.custom?.storagePath || body?.custom_storagePath
+    });
+    // Keep only last 10 callbacks
+    if (recentCallbacks.length > 10) recentCallbacks.shift();
+
     // Verify JWT token if present
     if (body.token) {
       try {
@@ -235,6 +248,19 @@ app.post('/onlyoffice-callback', async (req, res) => {
     console.error('⚠️ Error in /onlyoffice-callback:', err.message, err.stack);
     return res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// Endpoint to check recent callbacks
+app.get('/check-callback', async (req, res) => {
+  const { key } = req.query;
+  if (!key) {
+    return res.status(400).json({ error: 'Missing document key' });
+  }
+  const callback = recentCallbacks.find(cb => cb.key === key && cb.status === 2);
+  if (callback) {
+    return res.status(200).json({ received: true, storagePath: callback.storagePath, timestamp: callback.timestamp });
+  }
+  return res.status(200).json({ received: false });
 });
 
 // Test endpoint to simulate ONLYOFFICE callback
