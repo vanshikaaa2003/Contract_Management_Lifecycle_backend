@@ -30,7 +30,7 @@ async function signedUrl(relPath, expires = 60 * 30) {
 }
 
 const ONLYOFFICE_BASE = 'http://24.144.90.236';
-const JWT_SECRET = process.env.JWT_SECRET || '90622eb052254ec9a1592d118d81b6c7'; // Use env variable
+const JWT_SECRET = process.env.JWT_SECRET || '90622eb052254ec9a1592d118d81b6c7';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -39,7 +39,8 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({
   origin: [
     'http://accordwise-frontend.z2wjeuucks-xlm41xrvw6dy.p.temp-site.link',
-    'http://24.144.90.236' // Allow ONLYOFFICE server
+    'http://24.144.90.236',
+    'https://*.ngrok.io' // Allow ngrok for testing
   ],
   credentials: true
 }));
@@ -48,6 +49,8 @@ app.use(express.json({ limit: '50mb' }));
 // Add CORS headers to all static responses
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   next();
 });
 
@@ -84,6 +87,7 @@ app.post('/copy-template-doc', async (req, res) => {
 
     res.json({ message: 'File copied successfully', destinationPath });
   } catch (err) {
+    console.error('❌ Copy template error:', err.message, err.stack);
     res.status(500).json({ error: err.message });
   }
 });
@@ -113,6 +117,7 @@ app.post('/upload', upload, async (req, res) => {
     if (error) throw error;
     res.json({ message: 'File uploaded', storagePath: toBucketPath(relPath) });
   } catch (err) {
+    console.error('❌ Upload error:', err.message, err.stack);
     res.status(500).json({ error: err.message });
   }
 });
@@ -135,23 +140,23 @@ app.get('/signed-url', async (req, res) => {
       if (error.message.includes('Object not found')) {
         return res.status(200).json({ signedUrl: null, isNew: true });
       }
+      console.error('❌ Signed URL error:', error.message);
       return res.status(500).json({ error: error.message });
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.json({ signedUrl: data.signedUrl, isNew: false });
   } catch (err) {
-    console.error('Signed URL error:', err);
+    console.error('❌ Signed URL error:', err.message, err.stack);
     res.status(500).json({ error: 'Unexpected server error' });
   }
 });
 
 // ONLYOFFICE Save Callback Handler
-// ONLYOFFICE Save Callback Handler
 app.post('/onlyoffice-callback', async (req, res) => {
   try {
     const body = req.body;
-    console.log('📩 ONLYOFFICE callback received:', JSON.stringify(body, null, 2));
+    console.log('📩 ONLYOFFICE callback received at', new Date().toISOString(), ':', JSON.stringify(body, null, 2));
     console.log('📩 Request headers:', JSON.stringify(req.headers, null, 2));
 
     // Verify JWT token if present
@@ -215,12 +220,12 @@ app.post('/onlyoffice-callback', async (req, res) => {
         console.log(`✅ Document saved to Supabase at ${storagePath}`);
         return res.status(200).json({ error: 0 });
       } catch (fetchErr) {
-        console.error('❌ Fetch error:', fetchErr.message);
+        console.error('❌ Fetch error:', fetchErr.message, fetchErr.stack);
         return res.status(500).json({ error: `Failed to fetch updated document: ${fetchErr.message}` });
       }
     } else if (body.status === 6) {
       console.error('❌ Editor error:', body);
-      return res.status(200).json({ error: 0 }); // Acknowledge error status
+      return res.status(200).json({ error: 0 });
     } else {
       console.log('ℹ️ Unhandled status:', body.status);
       return res.status(200).json({ error: 0 });
@@ -228,6 +233,64 @@ app.post('/onlyoffice-callback', async (req, res) => {
   } catch (err) {
     console.error('⚠️ Error in /onlyoffice-callback:', err.message, err.stack);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Test endpoint to simulate ONLYOFFICE callback
+app.post('/test-onlyoffice-callback', async (req, res) => {
+  try {
+    const { bucketPath } = req.body;
+    if (!bucketPath) {
+      return res.status(400).json({ error: 'Missing bucketPath' });
+    }
+
+    const key = bucketPath.replace(/^accordwise-files\//, '');
+    const { data, error } = await supaSrv.storage.from(BUCKET).createSignedUrl(key, 1800);
+    if (error) {
+      console.error('❌ Signed URL error:', error.message);
+      return res.status(500).json({ error: `Failed to generate signed URL: ${error.message}` });
+    }
+
+    const testPayload = {
+      status: 2,
+      url: data.signedUrl,
+      key: `test_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      editorConfig: {
+        custom: {
+          storagePath: bucketPath
+        }
+      }
+    };
+
+    console.log('📩 Simulating callback with payload:', JSON.stringify(testPayload, null, 2));
+
+    // Simulate fetch and upload
+    const documentResponse = await fetch(testPayload.url, {
+      headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+    });
+    if (!documentResponse.ok) {
+      console.error('❌ Failed to fetch document:', documentResponse.statusText);
+      return res.status(500).json({ error: `Failed to fetch document: ${documentResponse.statusText}` });
+    }
+
+    const buffer = await documentResponse.buffer();
+    const uploadPath = testPayload.editorConfig.custom.storagePath.replace(/^accordwise-files\//, '');
+    const { error: uploadError } = await uploadBuffer(
+      uploadPath,
+      buffer,
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      true
+    );
+    if (uploadError) {
+      console.error('❌ Supabase upload error:', uploadError.message);
+      return res.status(500).json({ error: `Supabase upload failed: ${uploadError.message}` });
+    }
+
+    console.log(`✅ Test document saved to Supabase at ${testPayload.editorConfig.custom.storagePath}`);
+    return res.status(200).json({ error: 0, message: 'Test callback successful' });
+  } catch (err) {
+    console.error('⚠️ Error in /test-onlyoffice-callback:', err.message, err.stack);
+    return res.status(500).json({ error: `Test callback failed: ${err.message}` });
   }
 });
 
@@ -241,7 +304,10 @@ app.get('/generate-doc-token', async (req, res) => {
 
   const key = bucketPath.replace(`${BUCKET}/`, '');
   const { data, error } = await signedUrl(key, 1800);
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    console.error('❌ Generate doc token error:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
 
   const config = {
     document: {
@@ -262,7 +328,7 @@ app.get('/generate-doc-token', async (req, res) => {
 });
 
 app.use((err, _req, res, _next) => {
-  console.error('Unhandled', err);
+  console.error('❌ Unhandled error:', err.message, err.stack);
   res.status(500).json({ error: err.message });
 });
 
