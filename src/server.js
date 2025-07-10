@@ -319,14 +319,14 @@ app.post('/test-onlyoffice-callback', async (req, res) => {
 // Test ONLYOFFICE server connectivity
 app.get('/test-onlyoffice', async (req, res) => {
   try {
-    console.log(`Testing ONLYOFFICE connectivity to ${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`);
+    console.log(`Testing ONLYOFFICE connectivity to ${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js at ${new Date().toISOString()}`);
     const response = await fetch(`${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`, {
       method: 'HEAD',
       timeout: 5000
     });
     if (response.ok) {
-      console.log('✅ ONLYOFFICE server reachable at', ONLYOFFICE_BASE);
-      return res.status(200).json({ status: 'reachable' });
+      console.log('✅ ONLYOFFICE server reachable at', ONLYOFFICE_BASE, 'Status:', response.status);
+      return res.status(200).json({ status: 'reachable', details: `Status ${response.status}` });
     }
     console.error('❌ ONLYOFFICE server not reachable:', response.status, response.statusText);
     return res.status(500).json({ error: `ONLYOFFICE server not reachable: ${response.statusText}` });
