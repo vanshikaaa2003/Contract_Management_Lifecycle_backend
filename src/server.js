@@ -148,43 +148,50 @@ app.get('/signed-url', async (req, res) => {
 });
 
 
-
-// ONLYOFFICE callback endpoint
+// ONLYOFFICE Save Callback Handler
 app.post('/onlyoffice-callback', async (req, res) => {
-  const status = req.body.status;
-  const storagePath = req.body.editorConfig?.custom?.storagePath;
+  try {
+    const body = req.body;
+    console.log('📩 ONLYOFFICE callback received:', JSON.stringify(body, null, 2));
 
-  console.log('ONLYOFFICE callback status:', status, '→', storagePath);
+    if (!body || !body.status || !body.url || !body.key) {
+      return res.status(400).json({ error: 'Invalid ONLYOFFICE callback payload' });
+    }
 
-  if (status === 2 || status === 6) {
-    // Document is ready for saving
-    const downloadUrl = req.body.url;
-    try {
-      const response = await fetch(downloadUrl);
-      const buffer = await response.buffer();
-
-      const { error } = await supaSrv.storage
-        .from('accordwise-files')
-        .upload(storagePath, buffer, {
-          upsert: true,
-          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        });
-
-      if (error) {
-        console.error('Supabase upload error:', error);
-        return res.status(500).json({ error: 'Failed to save to Supabase' });
+    // ONLY handle "status 2" (document is ready for saving)
+    if (body.status === 2 || body.status === 6) {
+      const storagePath = body?.editorConfig?.custom?.storagePath || body?.custom_storagePath;
+      if (!storagePath) {
+        return res.status(400).json({ error: 'Missing storagePath in callback' });
       }
 
-      console.log('✅ Document saved to Supabase:', storagePath);
-      return res.status(200).json({ status: 'success' });
-    } catch (err) {
-      console.error('ONLYOFFICE callback fetch/upload error:', err);
-      return res.status(500).json({ error: 'Internal error during save' });
-    }
-  }
+      // Fetch the updated document
+      const documentResponse = await fetch(body.url);
+      if (!documentResponse.ok) {
+        return res.status(500).json({ error: 'Failed to fetch updated document from ONLYOFFICE' });
+      }
 
-  return res.status(200).json({ status: 'ignored' });
+      const buffer = await documentResponse.buffer();
+
+      // Upload to Supabase
+      const { error: uploadError } = await uploadBuffer(storagePath, buffer, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', true);
+      if (uploadError) {
+        console.error('❌ Supabase upload error:', uploadError.message);
+        return res.status(500).json({ error: uploadError.message });
+      }
+
+      console.log(`✅ Document saved to Supabase at ${storagePath}`);
+      return res.status(200).json({ error: 0 });
+    }
+
+    // For other statuses (not saved), respond OK but don't upload
+    return res.status(200).json({ error: 0 });
+  } catch (err) {
+    console.error('⚠️ Error in /onlyoffice-callback:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 });
+
 
 app.get('/health', (req, res) => {
   res.status(200).send('Backend is healthy');
