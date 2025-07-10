@@ -1,4 +1,4 @@
-// server.js — backend for AccordWise + ONLYOFFICE — UPDATED for WebSocket Testing
+// server.js — backend for AccordWise + ONLYOFFICE — UPDATED for Path Fix and WebSocket Logging
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -18,7 +18,7 @@ const supaSrv = createClient(
 );
 
 const BUCKET = 'accordwise-files';
-const toBucketPath = (relPath) => `${BUCKET}/${relPath.replace(/^\/+/, '')}`;
+const toBucketPath = (relPath) => relPath.replace(/^\/+/, '');
 
 async function uploadBuffer(relPath, buffer, mime, upsert = true) {
   const key = relPath.replace(/^\/+/, '');
@@ -122,7 +122,7 @@ app.post('/upload', upload, async (req, res) => {
     if (!relPath || !req.file) return res.status(400).json({ error: 'Missing file or path' });
     const { error } = await uploadBuffer(relPath, req.file.buffer, req.file.mimetype, true);
     if (error) throw error;
-    res.json({ message: 'File uploaded', storagePath: toBucketPath(relPath) });
+    res.json({ message: 'File uploaded', storagePath: relPath });
   } catch (err) {
     console.error('❌ Upload error:', err.message, err.stack);
     res.status(500).json({ error: err.message });
@@ -329,13 +329,15 @@ app.get('/test-onlyoffice', async (req, res) => {
     });
     if (!httpResponse.ok) {
       console.error('❌ ONLYOFFICE HTTP server not reachable:', httpResponse.status, httpResponse.statusText);
-      return res.status(500).json({ error: `ONLYOFFICE HTTP server not reachable: ${httpResponse.statusText}`, status: httpResponse.status, websocketStatus: 'unknown' });
+      return res.status(500).json({ error: `ONLYOFFICE HTTP server not reachable: ${httpResponse.statusText}`, status: httpResponse.status, websocketStatus: 'unknown', secureWebsocketStatus: 'unknown' });
     }
 
     console.log('✅ ONLYOFFICE HTTP server reachable at', ONLYOFFICE_BASE, 'Status:', httpResponse.status, 'Headers:', JSON.stringify(Object.fromEntries(httpResponse.headers), null, 2));
 
     let wsStatus = 'unknown';
     let wssStatus = 'unknown';
+    let wsError = null;
+    let wssError = null;
 
     // Test ws://
     console.log(`Testing ONLYOFFICE WebSocket connectivity to ${ONLYOFFICE_WS_BASE}/healthcheck at ${new Date().toISOString()}`);
@@ -349,12 +351,13 @@ app.get('/test-onlyoffice', async (req, res) => {
           resolve();
         };
         ws.onerror = (err) => {
-          console.error('❌ ONLYOFFICE ws:// connection failed:', err.message || 'No error message');
+          wsError = err.message || 'No error message';
+          console.error('❌ ONLYOFFICE ws:// connection failed:', wsError);
           wsStatus = 'failed';
           reject(new Error('ws:// connection failed'));
         };
-        ws.onclose = () => {
-          console.log('ws:// closed');
+        ws.onclose = (event) => {
+          console.log('ws:// closed:', { code: event.code, reason: event.reason });
           resolve();
         };
         setTimeout(() => {
@@ -365,7 +368,8 @@ app.get('/test-onlyoffice', async (req, res) => {
         }, 5000);
       });
     } catch (err) {
-      console.error('❌ ONLYOFFICE ws:// test failed:', err.message);
+      wsError = err.message;
+      console.error('❌ ONLYOFFICE ws:// test failed:', wsError);
       wsStatus = 'failed';
     }
 
@@ -381,12 +385,13 @@ app.get('/test-onlyoffice', async (req, res) => {
           resolve();
         };
         wss.onerror = (err) => {
-          console.error('❌ ONLYOFFICE wss:// connection failed:', err.message || 'No error message');
+          wssError = err.message || 'No error message';
+          console.error('❌ ONLYOFFICE wss:// connection failed:', wssError);
           wssStatus = 'failed';
           reject(new Error('wss:// connection failed'));
         };
-        wss.onclose = () => {
-          console.log('wss:// closed');
+        wss.onclose = (event) => {
+          console.log('wss:// closed:', { code: event.code, reason: event.reason });
           resolve();
         };
         setTimeout(() => {
@@ -397,7 +402,8 @@ app.get('/test-onlyoffice', async (req, res) => {
         }, 5000);
       });
     } catch (err) {
-      console.error('❌ ONLYOFFICE wss:// test failed:', err.message);
+      wssError = err.message;
+      console.error('❌ ONLYOFFICE wss:// test failed:', wssError);
       wssStatus = 'failed';
     }
 
@@ -406,11 +412,13 @@ app.get('/test-onlyoffice', async (req, res) => {
       details: `HTTP Status ${httpResponse.status}`,
       headers: Object.fromEntries(httpResponse.headers),
       websocketStatus: wsStatus,
-      secureWebsocketStatus: wssStatus
+      secureWebsocketStatus: wssStatus,
+      websocketError: wsError,
+      secureWebsocketError: wssError
     });
   } catch (err) {
     console.error('❌ ONLYOFFICE server test failed:', err.message, err.stack);
-    return res.status(500).json({ error: `Failed to reach ONLYOFFICE server: ${err.message}`, websocketStatus: 'failed', secureWebsocketStatus: 'failed' });
+    return res.status(500).json({ error: `Failed to reach ONLYOFFICE server: ${err.message}`, websocketStatus: 'failed', secureWebsocketStatus: 'failed', websocketError: err.message, secureWebsocketError: err.message });
   }
 });
 
