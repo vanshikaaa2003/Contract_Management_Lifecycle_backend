@@ -40,17 +40,18 @@ app.use(cors({
   origin: [
     'http://accordwise-frontend.z2wjeuucks-xlm41xrvw6dy.p.temp-site.link',
     'http://24.144.90.236',
-    'https://*.ngrok.io' // Allow ngrok for testing
+    'https://*.ngrok.io',
+    'https://webhook.site'
   ],
   credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
 
-// Add CORS headers to all static responses
+// Log all incoming requests
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  console.log(`📡 Incoming request: ${req.method} ${req.url} at ${new Date().toISOString()}`);
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('Body:', JSON.stringify(req.body, null, 2));
   next();
 });
 
