@@ -95,11 +95,6 @@ function verifyToken(req, res, next) {
     next();
   });
 }
-const cors = require('cors');
-app.use(cors({
-  origin: 'accordwise-frontend.z2wjeuucks-xlm41xrvw6dy.p.temp-site.link',
-  credentials: true
-}));
 
 
 // Upload to Supabase
