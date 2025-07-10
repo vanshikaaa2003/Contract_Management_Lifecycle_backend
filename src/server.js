@@ -147,23 +147,25 @@ app.get('/signed-url', async (req, res) => {
 });
 
 // ONLYOFFICE Save Callback Handler
+// ONLYOFFICE Save Callback Handler
 app.post('/onlyoffice-callback', async (req, res) => {
   try {
     const body = req.body;
     console.log('📩 ONLYOFFICE callback received:', JSON.stringify(body, null, 2));
+    console.log('📩 Request headers:', JSON.stringify(req.headers, null, 2));
 
     // Verify JWT token if present
     if (body.token) {
       try {
-        jwt.verify(body.token, JWT_SECRET);
-        console.log('✅ JWT token verified');
+        const decoded = jwt.verify(body.token, JWT_SECRET);
+        console.log('✅ JWT token verified:', decoded);
       } catch (err) {
         console.error('❌ JWT verification failed:', err.message);
         return res.status(400).json({ error: 'Invalid JWT token' });
       }
     }
 
-    // Relax validation for debugging
+    // Validate payload
     if (!body || !body.status) {
       console.error('❌ Invalid payload: missing status');
       return res.status(400).json({ error: 'Invalid ONLYOFFICE callback payload: missing status' });
@@ -172,11 +174,11 @@ app.post('/onlyoffice-callback', async (req, res) => {
     // Handle status 2 (document saved) or status 6 (error)
     if (body.status === 2) {
       if (!body.url || !body.key) {
-        console.error('❌ Invalid payload: missing url or key');
+        console.error('❌ Invalid payload: missing url or key', { url: body.url, key: body.key });
         return res.status(400).json({ error: 'Invalid ONLYOFFICE callback payload: missing url or key' });
       }
 
-      // Get storagePath from editorConfig.custom.storagePath
+      // Get storagePath
       const storagePath = body?.editorConfig?.custom?.storagePath || body?.custom_storagePath;
       if (!storagePath) {
         console.error('❌ Missing storagePath in callback');
@@ -185,34 +187,40 @@ app.post('/onlyoffice-callback', async (req, res) => {
 
       // Fetch the updated document
       console.log('📥 Fetching document from:', body.url);
-      const documentResponse = await fetch(body.url, {
-        headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
-      });
-      if (!documentResponse.ok) {
-        console.error('❌ Failed to fetch document:', documentResponse.statusText);
-        return res.status(500).json({ error: 'Failed to fetch updated document from ONLYOFFICE' });
+      try {
+        const documentResponse = await fetch(body.url, {
+          headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+        });
+        if (!documentResponse.ok) {
+          console.error('❌ Failed to fetch document:', documentResponse.status, documentResponse.statusText);
+          return res.status(500).json({ error: `Failed to fetch updated document from ONLYOFFICE: ${documentResponse.statusText}` });
+        }
+
+        const buffer = await documentResponse.buffer();
+
+        // Upload to Supabase
+        console.log('📤 Uploading to Supabase at:', storagePath);
+        const uploadPath = storagePath.replace(/^accordwise-files\//, '');
+        const { error: uploadError } = await uploadBuffer(
+          uploadPath,
+          buffer,
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          true
+        );
+        if (uploadError) {
+          console.error('❌ Supabase upload error:', uploadError.message);
+          return res.status(500).json({ error: `Supabase upload failed: ${uploadError.message}` });
+        }
+
+        console.log(`✅ Document saved to Supabase at ${storagePath}`);
+        return res.status(200).json({ error: 0 });
+      } catch (fetchErr) {
+        console.error('❌ Fetch error:', fetchErr.message);
+        return res.status(500).json({ error: `Failed to fetch updated document: ${fetchErr.message}` });
       }
-
-      const buffer = await documentResponse.buffer();
-
-      // Upload to Supabase
-      console.log('📤 Uploading to Supabase at:', storagePath);
-      const { error: uploadError } = await uploadBuffer(
-        storagePath.replace(/^accordwise-files\//, ''),
-        buffer,
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        true
-      );
-      if (uploadError) {
-        console.error('❌ Supabase upload error:', uploadError.message);
-        return res.status(500).json({ error: uploadError.message });
-      }
-
-      console.log(`✅ Document saved to Supabase at ${storagePath}`);
-      return res.status(200).json({ error: 0 });
     } else if (body.status === 6) {
       console.error('❌ Editor error:', body);
-      return res.status(200).json({ error: 0 }); // Still return success to avoid retries
+      return res.status(200).json({ error: 0 }); // Acknowledge error status
     } else {
       console.log('ℹ️ Unhandled status:', body.status);
       return res.status(200).json({ error: 0 });
