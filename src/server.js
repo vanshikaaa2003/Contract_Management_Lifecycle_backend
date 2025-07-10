@@ -325,11 +325,11 @@ app.get('/test-onlyoffice', async (req, res) => {
       timeout: 5000
     });
     if (response.ok) {
-      console.log('✅ ONLYOFFICE server reachable at', ONLYOFFICE_BASE, 'Status:', response.status);
-      return res.status(200).json({ status: 'reachable', details: `Status ${response.status}` });
+      console.log('✅ ONLYOFFICE server reachable at', ONLYOFFICE_BASE, 'Status:', response.status, 'Headers:', JSON.stringify(Object.fromEntries(response.headers), null, 2));
+      return res.status(200).json({ status: 'reachable', details: `Status ${response.status}`, headers: Object.fromEntries(response.headers) });
     }
     console.error('❌ ONLYOFFICE server not reachable:', response.status, response.statusText);
-    return res.status(500).json({ error: `ONLYOFFICE server not reachable: ${response.statusText}` });
+    return res.status(500).json({ error: `ONLYOFFICE server not reachable: ${response.statusText}`, status: response.status });
   } catch (err) {
     console.error('❌ ONLYOFFICE server test failed:', err.message, err.stack);
     return res.status(500).json({ error: `Failed to reach ONLYOFFICE server: ${err.message}` });
