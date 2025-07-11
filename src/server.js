@@ -319,10 +319,9 @@ app.post('/test-onlyoffice-callback', async (req, res) => {
   }
 });
 
-
-
 app.get('/test-onlyoffice', async (req, res) => {
   try {
+    const ONLYOFFICE_BASE = 'https://24.144.90.236'; // Updated to HTTPS
     console.log(`Testing ONLYOFFICE HTTP connectivity to ${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js at ${new Date().toISOString()}`);
     const httpResponse = await fetch(`${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`, {
       method: 'HEAD',
@@ -333,11 +332,7 @@ app.get('/test-onlyoffice', async (req, res) => {
       return res.status(500).json({
         error: `ONLYOFFICE HTTP server not reachable: ${httpResponse.statusText}`,
         status: httpResponse.status,
-        websocketStatus: 'unknown',
         secureWebsocketStatus: 'unknown',
-        websocketError: null,
-        websocketCloseCode: null,
-        websocketCloseReason: null,
         secureWebsocketError: null,
         secureWebsocketCloseCode: null,
         secureWebsocketCloseReason: null
@@ -346,14 +341,10 @@ app.get('/test-onlyoffice', async (req, res) => {
 
     console.log('✅ ONLYOFFICE HTTP server reachable at', ONLYOFFICE_BASE, 'Status:', httpResponse.status, 'Headers:', JSON.stringify(Object.fromEntries(httpResponse.headers), null, 2));
 
-    let wsStatus = 'unknown';
-    let wssStatus = 'unknown';
-    let wsError = null;
-    let wssError = null;
-    let wsCloseCode = null;
-    let wsCloseReason = null;
-    let wssCloseCode = null;
-    let wssCloseReason = null;
+    let secureWebsocketStatus = 'unknown';
+    let secureWebsocketError = null;
+    let secureWebsocketCloseCode = null;
+    let secureWebsocketCloseReason = null;
 
     // Generate JWT token for WebSocket test
     const testConfig = {
@@ -368,68 +359,29 @@ app.get('/test-onlyoffice', async (req, res) => {
     };
     const jwtToken = jwt.sign(testConfig, JWT_SECRET, { expiresIn: '3h' });
 
-    // Test ws://doc/
-    console.log(`Testing ONLYOFFICE WebSocket connectivity to ${ONLYOFFICE_WS_BASE}/doc/ at ${new Date().toISOString()}`);
-    try {
-      const ws = new WebSocket(`${ONLYOFFICE_WS_BASE}/doc/`, [], {
-        headers: { Authorization: `Bearer ${jwtToken}` }
-      });
-      await new Promise((resolve, reject) => {
-        ws.onopen = () => {
-          console.log('✅ ONLYOFFICE ws://doc/ connected');
-          wsStatus = 'connected';
-          ws.send('ping');
-          ws.close();
-          resolve();
-        };
-        ws.onerror = (err) => {
-          wsError = err.message || 'No error message';
-          console.error('❌ ONLYOFFICE ws://doc/ connection failed:', wsError);
-          wsStatus = 'failed';
-          reject(new Error('ws://doc/ connection failed'));
-        };
-        ws.onclose = (event) => {
-          wsCloseCode = event.code;
-          wsCloseReason = event.reason || 'No reason provided';
-          console.log('ws://doc/ closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
-          resolve();
-        };
-        setTimeout(() => {
-          if (ws.readyState !== WebSocket.OPEN) {
-            ws.close();
-            reject(new Error('ws://doc/ connection timed out'));
-          }
-        }, 5000);
-      });
-    } catch (err) {
-      wsError = err.message;
-      console.error('❌ ONLYOFFICE ws://doc/ test failed:', wsError);
-      wsStatus = 'failed';
-    }
-
     // Test wss://doc/
-    console.log(`Testing ONLYOFFICE WebSocket connectivity to ${ONLYOFFICE_WSS_BASE}/doc/ at ${new Date().toISOString()}`);
+    console.log(`Testing ONLYOFFICE WebSocket connectivity to wss://24.144.90.236/doc/ at ${new Date().toISOString()}`);
     try {
-      const wss = new WebSocket(`${ONLYOFFICE_WSS_BASE}/doc/`, [], {
+      const wss = new WebSocket('wss://24.144.90.236/doc/', [], {
         headers: { Authorization: `Bearer ${jwtToken}` }
       });
       await new Promise((resolve, reject) => {
         wss.onopen = () => {
           console.log('✅ ONLYOFFICE wss://doc/ connected');
-          wssStatus = 'connected';
+          secureWebsocketStatus = 'connected';
           wss.send('ping');
           wss.close();
           resolve();
         };
         wss.onerror = (err) => {
-          wssError = err.message || 'No error message';
-          console.error('❌ ONLYOFFICE wss://doc/ connection failed:', wssError);
-          wssStatus = 'failed';
+          secureWebsocketError = err.message || 'No error message';
+          console.error('❌ ONLYOFFICE wss://doc/ connection failed:', secureWebsocketError);
+          secureWebsocketStatus = 'failed';
           reject(new Error('wss://doc/ connection failed'));
         };
         wss.onclose = (event) => {
-          wssCloseCode = event.code;
-          wssCloseReason = event.reason || 'No reason provided';
+          secureWebsocketCloseCode = event.code;
+          secureWebsocketCloseReason = event.reason || 'No reason provided';
           console.log('wss://doc/ closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
           resolve();
         };
@@ -441,33 +393,25 @@ app.get('/test-onlyoffice', async (req, res) => {
         }, 5000);
       });
     } catch (err) {
-      wssError = err.message;
-      console.error('❌ ONLYOFFICE wss://doc/ test failed:', wssError);
-      wssStatus = 'failed';
+      secureWebsocketError = err.message;
+      console.error('❌ ONLYOFFICE wss://doc/ test failed:', secureWebsocketError);
+      secureWebsocketStatus = 'failed';
     }
 
     return res.status(200).json({
       status: httpResponse.ok ? 'reachable' : 'unreachable',
       details: `HTTP Status ${httpResponse.status}`,
       headers: Object.fromEntries(httpResponse.headers),
-      websocketStatus: wsStatus,
-      secureWebsocketStatus: wssStatus,
-      websocketError: wsError,
-      websocketCloseCode: wsCloseCode,
-      websocketCloseReason: wsCloseReason,
-      secureWebsocketError: wssError,
-      secureWebsocketCloseCode: wssCloseCode,
-      secureWebsocketCloseReason: wssCloseReason
+      secureWebsocketStatus,
+      secureWebsocketError,
+      secureWebsocketCloseCode,
+      secureWebsocketCloseReason
     });
   } catch (err) {
     console.error('❌ ONLYOFFICE server test failed:', err.message, err.stack);
     return res.status(500).json({
       error: `Failed to reach ONLYOFFICE server: ${err.message}`,
-      websocketStatus: 'failed',
       secureWebsocketStatus: 'failed',
-      websocketError: err.message,
-      websocketCloseCode: null,
-      websocketCloseReason: null,
       secureWebsocketError: err.message,
       secureWebsocketCloseCode: null,
       secureWebsocketCloseReason: null
