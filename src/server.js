@@ -319,8 +319,7 @@ app.post('/test-onlyoffice-callback', async (req, res) => {
   }
 });
 
-const WebSocket = require('ws');
-const jwt = require('jsonwebtoken');
+
 
 app.get('/test-onlyoffice', async (req, res) => {
   try {
