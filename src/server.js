@@ -319,7 +319,9 @@ app.post('/test-onlyoffice-callback', async (req, res) => {
   }
 });
 
-// Test ONLYOFFICE server connectivity
+const WebSocket = require('ws');
+const jwt = require('jsonwebtoken');
+
 app.get('/test-onlyoffice', async (req, res) => {
   try {
     console.log(`Testing ONLYOFFICE HTTP connectivity to ${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js at ${new Date().toISOString()}`);
@@ -367,81 +369,81 @@ app.get('/test-onlyoffice', async (req, res) => {
     };
     const jwtToken = jwt.sign(testConfig, JWT_SECRET, { expiresIn: '3h' });
 
-    // Test ws://
-    console.log(`Testing ONLYOFFICE WebSocket connectivity to ${ONLYOFFICE_WS_BASE}/healthcheck at ${new Date().toISOString()}`);
+    // Test ws://doc/
+    console.log(`Testing ONLYOFFICE WebSocket connectivity to ${ONLYOFFICE_WS_BASE}/doc/ at ${new Date().toISOString()}`);
     try {
-      const ws = new WebSocket(`${ONLYOFFICE_WS_BASE}/healthcheck`, [], {
+      const ws = new WebSocket(`${ONLYOFFICE_WS_BASE}/doc/`, [], {
         headers: { Authorization: `Bearer ${jwtToken}` }
       });
       await new Promise((resolve, reject) => {
         ws.onopen = () => {
-          console.log('✅ ONLYOFFICE ws:// connected');
+          console.log('✅ ONLYOFFICE ws://doc/ connected');
           wsStatus = 'connected';
-          ws.send('ping'); // Test message
+          ws.send('ping');
           ws.close();
           resolve();
         };
         ws.onerror = (err) => {
           wsError = err.message || 'No error message';
-          console.error('❌ ONLYOFFICE ws:// connection failed:', wsError);
+          console.error('❌ ONLYOFFICE ws://doc/ connection failed:', wsError);
           wsStatus = 'failed';
-          reject(new Error('ws:// connection failed'));
+          reject(new Error('ws://doc/ connection failed'));
         };
         ws.onclose = (event) => {
           wsCloseCode = event.code;
           wsCloseReason = event.reason || 'No reason provided';
-          console.log('ws:// closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
+          console.log('ws://doc/ closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
           resolve();
         };
         setTimeout(() => {
           if (ws.readyState !== WebSocket.OPEN) {
             ws.close();
-            reject(new Error('ws:// connection timed out'));
+            reject(new Error('ws://doc/ connection timed out'));
           }
         }, 5000);
       });
     } catch (err) {
       wsError = err.message;
-      console.error('❌ ONLYOFFICE ws:// test failed:', wsError);
+      console.error('❌ ONLYOFFICE ws://doc/ test failed:', wsError);
       wsStatus = 'failed';
     }
 
-    // Test wss://
-    console.log(`Testing ONLYOFFICE WebSocket connectivity to ${ONLYOFFICE_WSS_BASE}/healthcheck at ${new Date().toISOString()}`);
+    // Test wss://doc/
+    console.log(`Testing ONLYOFFICE WebSocket connectivity to ${ONLYOFFICE_WSS_BASE}/doc/ at ${new Date().toISOString()}`);
     try {
-      const wss = new WebSocket(`${ONLYOFFICE_WSS_BASE}/healthcheck`, [], {
+      const wss = new WebSocket(`${ONLYOFFICE_WSS_BASE}/doc/`, [], {
         headers: { Authorization: `Bearer ${jwtToken}` }
       });
       await new Promise((resolve, reject) => {
         wss.onopen = () => {
-          console.log('✅ ONLYOFFICE wss:// connected');
+          console.log('✅ ONLYOFFICE wss://doc/ connected');
           wssStatus = 'connected';
-          wss.send('ping'); // Test message
+          wss.send('ping');
           wss.close();
           resolve();
         };
         wss.onerror = (err) => {
           wssError = err.message || 'No error message';
-          console.error('❌ ONLYOFFICE wss:// connection failed:', wssError);
+          console.error('❌ ONLYOFFICE wss://doc/ connection failed:', wssError);
           wssStatus = 'failed';
-          reject(new Error('wss:// connection failed'));
+          reject(new Error('wss://doc/ connection failed'));
         };
         wss.onclose = (event) => {
           wssCloseCode = event.code;
           wssCloseReason = event.reason || 'No reason provided';
-          console.log('wss:// closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
+          console.log('wss://doc/ closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
           resolve();
         };
         setTimeout(() => {
           if (wss.readyState !== WebSocket.OPEN) {
             wss.close();
-            reject(new Error('wss:// connection timed out'));
+            reject(new Error('wss://doc/ connection timed out'));
           }
         }, 5000);
       });
     } catch (err) {
       wssError = err.message;
-      console.error('❌ ONLYOFFICE wss:// test failed:', wssError);
+      console.error('❌ ONLYOFFICE wss://doc/ test failed:', wssError);
       wssStatus = 'failed';
     }
 
