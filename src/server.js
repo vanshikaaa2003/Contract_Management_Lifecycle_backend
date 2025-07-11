@@ -335,7 +335,11 @@ app.get('/test-onlyoffice', async (req, res) => {
         websocketStatus: 'unknown',
         secureWebsocketStatus: 'unknown',
         websocketError: null,
-        secureWebsocketError: null
+        websocketCloseCode: null,
+        websocketCloseReason: null,
+        secureWebsocketError: null,
+        secureWebsocketCloseCode: null,
+        secureWebsocketCloseReason: null
       });
     }
 
@@ -350,14 +354,30 @@ app.get('/test-onlyoffice', async (req, res) => {
     let wssCloseCode = null;
     let wssCloseReason = null;
 
+    // Generate JWT token for WebSocket test
+    const testConfig = {
+      document: {
+        fileType: 'docx',
+        title: 'test.docx',
+        url: 'http://example.com/test.docx',
+        key: `test_${Date.now()}`,
+        permissions: { edit: true, download: true }
+      },
+      editorConfig: { mode: 'edit' }
+    };
+    const jwtToken = jwt.sign(testConfig, JWT_SECRET, { expiresIn: '3h' });
+
     // Test ws://
     console.log(`Testing ONLYOFFICE WebSocket connectivity to ${ONLYOFFICE_WS_BASE}/healthcheck at ${new Date().toISOString()}`);
     try {
-      const ws = new WebSocket(`${ONLYOFFICE_WS_BASE}/healthcheck`);
+      const ws = new WebSocket(`${ONLYOFFICE_WS_BASE}/healthcheck`, [], {
+        headers: { Authorization: `Bearer ${jwtToken}` }
+      });
       await new Promise((resolve, reject) => {
         ws.onopen = () => {
           console.log('✅ ONLYOFFICE ws:// connected');
           wsStatus = 'connected';
+          ws.send('ping'); // Test message
           ws.close();
           resolve();
         };
@@ -370,7 +390,7 @@ app.get('/test-onlyoffice', async (req, res) => {
         ws.onclose = (event) => {
           wsCloseCode = event.code;
           wsCloseReason = event.reason || 'No reason provided';
-          console.log('ws:// closed:', { code: event.code, reason: event.reason });
+          console.log('ws:// closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
           resolve();
         };
         setTimeout(() => {
@@ -389,11 +409,14 @@ app.get('/test-onlyoffice', async (req, res) => {
     // Test wss://
     console.log(`Testing ONLYOFFICE WebSocket connectivity to ${ONLYOFFICE_WSS_BASE}/healthcheck at ${new Date().toISOString()}`);
     try {
-      const wss = new WebSocket(`${ONLYOFFICE_WSS_BASE}/healthcheck`);
+      const wss = new WebSocket(`${ONLYOFFICE_WSS_BASE}/healthcheck`, [], {
+        headers: { Authorization: `Bearer ${jwtToken}` }
+      });
       await new Promise((resolve, reject) => {
         wss.onopen = () => {
           console.log('✅ ONLYOFFICE wss:// connected');
           wssStatus = 'connected';
+          wss.send('ping'); // Test message
           wss.close();
           resolve();
         };
@@ -406,7 +429,7 @@ app.get('/test-onlyoffice', async (req, res) => {
         wss.onclose = (event) => {
           wssCloseCode = event.code;
           wssCloseReason = event.reason || 'No reason provided';
-          console.log('wss:// closed:', { code: event.code, reason: event.reason });
+          console.log('wss:// closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
           resolve();
         };
         setTimeout(() => {
@@ -442,9 +465,11 @@ app.get('/test-onlyoffice', async (req, res) => {
       websocketStatus: 'failed',
       secureWebsocketStatus: 'failed',
       websocketError: err.message,
-      secureWebsocketError: err.message,
       websocketCloseCode: null,
-      secureWebsocketCloseCode: null
+      websocketCloseReason: null,
+      secureWebsocketError: err.message,
+      secureWebsocketCloseCode: null,
+      secureWebsocketCloseReason: null
     });
   }
 });
