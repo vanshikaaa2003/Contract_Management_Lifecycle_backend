@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -30,7 +29,7 @@ async function signedUrl(relPath, expires = 60 * 30) {
   return supaSrv.storage.from(BUCKET).createSignedUrl(key, expires);
 }
 
-const ONLYOFFICE_BASE = 'http://24.144.90.236:8080'; // Updated to container port
+const ONLYOFFICE_BASE = 'http://24.144.90.236:8080'; // Container port
 const ONLYOFFICE_WS_BASE = 'ws://24.144.90.236:8080'; // Non-secure WebSocket
 const JWT_SECRET = process.env.JWT_SECRET || '90622eb052254ec9a1592d118d81b6c7';
 
@@ -44,7 +43,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({
   origin: [
     'http://accordwise-frontend.z2wjeuucks-xlm41xrvw6dy.p.temp-site.link',
-    'http://24.144.90.236:8080', // Updated to include container port
+    'http://24.144.90.236:8080',
     'https://*.ngrok.io',
     'https://webhook.site'
   ],
@@ -321,23 +320,24 @@ app.post('/test-onlyoffice-callback', async (req, res) => {
 app.get('/test-onlyoffice', async (req, res) => {
   try {
     console.log(`Testing ONLYOFFICE HTTP connectivity to ${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js at ${new Date().toISOString()}`);
-    const httpResponse = await fetch(`${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`, {
-      method: 'HEAD',
-      timeout: 5000
-    });
-    if (!httpResponse.ok) {
-      console.error('❌ ONLYOFFICE HTTP server not reachable:', httpResponse.status, httpResponse.statusText);
-      return res.status(500).json({
-        error: `ONLYOFFICE HTTP server not reachable: ${httpResponse.statusText}`,
-        status: httpResponse.status,
-        websocketStatus: 'unknown',
-        websocketError: null,
-        websocketCloseCode: null,
-        websocketCloseReason: null
+    let httpStatus = 'unreachable';
+    let httpError = null;
+    try {
+      const httpResponse = await fetch(`${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`, {
+        method: 'HEAD',
+        timeout: 5000
       });
+      httpStatus = httpResponse.ok ? 'reachable' : 'unreachable';
+      if (!httpResponse.ok) {
+        httpError = `HTTP ${httpResponse.status}: ${httpResponse.statusText}`;
+        console.error('❌ ONLYOFFICE HTTP server not reachable:', httpResponse.status, httpResponse.statusText);
+      } else {
+        console.log('✅ ONLYOFFICE HTTP server reachable at', ONLYOFFICE_BASE, 'Status:', httpResponse.status, 'Headers:', JSON.stringify(Object.fromEntries(httpResponse.headers), null, 2));
+      }
+    } catch (err) {
+      httpError = err.message;
+      console.error('❌ ONLYOFFICE HTTP test failed:', httpError);
     }
-
-    console.log('✅ ONLYOFFICE HTTP server reachable at', ONLYOFFICE_BASE, 'Status:', httpResponse.status, 'Headers:', JSON.stringify(Object.fromEntries(httpResponse.headers), null, 2));
 
     let websocketStatus = 'unknown';
     let websocketError = null;
@@ -348,8 +348,8 @@ app.get('/test-onlyoffice', async (req, res) => {
     const testConfig = {
       document: {
         fileType: 'docx',
-        title: 'test.docx',
-        url: 'http://24.144.90.236:8080/docs/sample.docx', // Updated to static file
+        title: 'sample.docx',
+        url: 'http://24.144.90.236:8080/docs/sample.docx',
         key: `test_${Date.now()}`,
         permissions: { edit: true, download: true }
       },
@@ -396,10 +396,21 @@ app.get('/test-onlyoffice', async (req, res) => {
       websocketStatus = 'failed';
     }
 
+    if (httpStatus === 'unreachable' || websocketStatus === 'failed') {
+      return res.status(500).json({
+        error: `ONLYOFFICE server not fully reachable: ${httpError || websocketError || 'Unknown error'}`,
+        status: httpStatus,
+        websocketStatus,
+        websocketError,
+        websocketCloseCode,
+        websocketCloseReason
+      });
+    }
+
     return res.status(200).json({
-      status: httpResponse.ok ? 'reachable' : 'unreachable',
-      details: `HTTP Status ${httpResponse.status}`,
-      headers: Object.fromEntries(httpResponse.headers),
+      status: httpStatus,
+      details: `HTTP Status ${httpStatus}`,
+      headers: httpStatus === 'reachable' ? Object.fromEntries(httpResponse.headers) : {},
       websocketStatus,
       websocketError,
       websocketCloseCode,
@@ -409,6 +420,7 @@ app.get('/test-onlyoffice', async (req, res) => {
     console.error('❌ ONLYOFFICE server test failed:', err.message, err.stack);
     return res.status(500).json({
       error: `Failed to reach ONLYOFFICE server: ${err.message}`,
+      status: 'unreachable',
       websocketStatus: 'failed',
       websocketError: err.message,
       websocketCloseCode: null,
@@ -421,33 +433,27 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'Backend is healthy' });
 });
 
-app.get('/generate-doc-token', async (req, res) => {
-  const { bucketPath, userEmail } = req.query;
-  if (!bucketPath) return res.status(400).json({ error: 'bucketPath missing' });
+app.post('/generate-doc-token', async (req, res) => {
+  const { bucketPath, config } = req.body;
+  if (!bucketPath || !config) return res.status(400).json({ error: 'Missing bucketPath or config' });
 
-  const key = bucketPath.replace(`${BUCKET}/`, '');
-  const { data, error } = await signedUrl(key, 1800);
-  if (error) {
-    console.error('❌ Generate doc token error:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-
-  const config = {
-    document: {
-      fileType: 'docx',
-      title: key.split('/').pop(),
-      url: data.signedUrl || 'http://24.144.90.236:8080/docs/sample.docx', // Fallback to static file
-      key: `test_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-      permissions: { edit: false, download: true }
-    },
-    editorConfig: {
-      user: { id: userEmail || 'anon', name: userEmail || 'Viewer' },
-      mode: 'view'
+  try {
+    const key = bucketPath.replace(`${BUCKET}/`, '');
+    const { data, error } = await signedUrl(key, 1800);
+    if (error && !error.message.includes('Object not found')) {
+      console.error('❌ Generate doc token error:', error.message);
+      return res.status(500).json({ error: error.message });
     }
-  };
 
-  const token = jwt.sign(config, JWT_SECRET);
-  res.json({ token, config });
+    config.document.url = data?.signedUrl || 'http://24.144.90.236:8080/docs/sample.docx';
+    config.document.key = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+    const token = jwt.sign(config, JWT_SECRET, { expiresIn: '3h' });
+    res.json({ token, config });
+  } catch (err) {
+    console.error('❌ Generate doc token error:', err.message, err.stack);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.use((err, req, res, next) => {
