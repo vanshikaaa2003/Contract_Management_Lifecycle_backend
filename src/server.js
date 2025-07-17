@@ -1,4 +1,4 @@
-// server.js — backend for AccordWise + ONLYOFFICE — UPDATED for Path Fix and WebSocket Logging
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -30,9 +30,8 @@ async function signedUrl(relPath, expires = 60 * 30) {
   return supaSrv.storage.from(BUCKET).createSignedUrl(key, expires);
 }
 
-const ONLYOFFICE_BASE = 'http://24.144.90.236';
-const ONLYOFFICE_WS_BASE = 'ws://24.144.90.236';
-const ONLYOFFICE_WSS_BASE = 'wss://24.144.90.236';
+const ONLYOFFICE_BASE = 'http://24.144.90.236:8080'; // Updated to container port
+const ONLYOFFICE_WS_BASE = 'ws://24.144.90.236:8080'; // Non-secure WebSocket
 const JWT_SECRET = process.env.JWT_SECRET || '90622eb052254ec9a1592d118d81b6c7';
 
 // Store recent callbacks for verification (in-memory, use DB in production)
@@ -45,7 +44,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({
   origin: [
     'http://accordwise-frontend.z2wjeuucks-xlm41xrvw6dy.p.temp-site.link',
-    'http://24.144.90.236',
+    'http://24.144.90.236:8080', // Updated to include container port
     'https://*.ngrok.io',
     'https://webhook.site'
   ],
@@ -216,7 +215,6 @@ app.post('/onlyoffice-callback', async (req, res) => {
         }
 
         const buffer = await documentResponse.buffer();
-
         console.log('📤 Uploading to Supabase at:', storagePath);
         const uploadPath = storagePath.replace(/^accordwise-files\//, '');
         const { error: uploadError } = await uploadBuffer(
@@ -319,9 +317,9 @@ app.post('/test-onlyoffice-callback', async (req, res) => {
   }
 });
 
+// Test ONLYOFFICE connectivity
 app.get('/test-onlyoffice', async (req, res) => {
   try {
-    const ONLYOFFICE_BASE = 'https://24.144.90.236'; // Updated to HTTPS
     console.log(`Testing ONLYOFFICE HTTP connectivity to ${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js at ${new Date().toISOString()}`);
     const httpResponse = await fetch(`${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`, {
       method: 'HEAD',
@@ -332,26 +330,26 @@ app.get('/test-onlyoffice', async (req, res) => {
       return res.status(500).json({
         error: `ONLYOFFICE HTTP server not reachable: ${httpResponse.statusText}`,
         status: httpResponse.status,
-        secureWebsocketStatus: 'unknown',
-        secureWebsocketError: null,
-        secureWebsocketCloseCode: null,
-        secureWebsocketCloseReason: null
+        websocketStatus: 'unknown',
+        websocketError: null,
+        websocketCloseCode: null,
+        websocketCloseReason: null
       });
     }
 
     console.log('✅ ONLYOFFICE HTTP server reachable at', ONLYOFFICE_BASE, 'Status:', httpResponse.status, 'Headers:', JSON.stringify(Object.fromEntries(httpResponse.headers), null, 2));
 
-    let secureWebsocketStatus = 'unknown';
-    let secureWebsocketError = null;
-    let secureWebsocketCloseCode = null;
-    let secureWebsocketCloseReason = null;
+    let websocketStatus = 'unknown';
+    let websocketError = null;
+    let websocketCloseCode = null;
+    let websocketCloseReason = null;
 
     // Generate JWT token for WebSocket test
     const testConfig = {
       document: {
         fileType: 'docx',
         title: 'test.docx',
-        url: 'http://example.com/test.docx',
+        url: 'http://24.144.90.236:8080/docs/sample.docx', // Updated to static file
         key: `test_${Date.now()}`,
         permissions: { edit: true, download: true }
       },
@@ -359,65 +357,66 @@ app.get('/test-onlyoffice', async (req, res) => {
     };
     const jwtToken = jwt.sign(testConfig, JWT_SECRET, { expiresIn: '3h' });
 
-    // Test wss://doc/
-    console.log(`Testing ONLYOFFICE WebSocket connectivity to wss://24.144.90.236/doc/ at ${new Date().toISOString()}`);
+    // Test ws://doc/
+    console.log(`Testing ONLYOFFICE WebSocket connectivity to ${ONLYOFFICE_WS_BASE}/doc/ at ${new Date().toISOString()}`);
     try {
-      const wss = new WebSocket('wss://24.144.90.236/doc/', [], {
+      const ws = new WebSocket(`${ONLYOFFICE_WS_BASE}/doc/`, [], {
         headers: { Authorization: `Bearer ${jwtToken}` }
       });
       await new Promise((resolve, reject) => {
-        wss.onopen = () => {
-          console.log('✅ ONLYOFFICE wss://doc/ connected');
-          secureWebsocketStatus = 'connected';
-          wss.send('ping');
-          wss.close();
+        ws.onopen = () => {
+          console.log('✅ ONLYOFFICE ws://doc/ connected');
+          websocketStatus = 'connected';
+          ws.send('ping');
+          ws.close();
           resolve();
         };
-        wss.onerror = (err) => {
-          secureWebsocketError = err.message || 'No error message';
-          console.error('❌ ONLYOFFICE wss://doc/ connection failed:', secureWebsocketError);
-          secureWebsocketStatus = 'failed';
-          reject(new Error('wss://doc/ connection failed'));
+        ws.onerror = (err) => {
+          websocketError = err.message || 'No error message';
+          console.error('❌ ONLYOFFICE ws://doc/ connection failed:', websocketError);
+          websocketStatus = 'failed';
+          reject(new Error('ws://doc/ connection failed'));
         };
-        wss.onclose = (event) => {
-          secureWebsocketCloseCode = event.code;
-          secureWebsocketCloseReason = event.reason || 'No reason provided';
-          console.log('wss://doc/ closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
+        ws.onclose = (event) => {
+          websocketCloseCode = event.code;
+          websocketCloseReason = event.reason || 'No reason provided';
+          console.log('ws://doc/ closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
           resolve();
         };
         setTimeout(() => {
-          if (wss.readyState !== WebSocket.OPEN) {
-            wss.close();
-            reject(new Error('wss://doc/ connection timed out'));
+          if (ws.readyState !== WebSocket.OPEN) {
+            ws.close();
+            reject(new Error('ws://doc/ connection timed out'));
           }
         }, 5000);
       });
     } catch (err) {
-      secureWebsocketError = err.message;
-      console.error('❌ ONLYOFFICE wss://doc/ test failed:', secureWebsocketError);
-      secureWebsocketStatus = 'failed';
+      websocketError = err.message;
+      console.error('❌ ONLYOFFICE ws://doc/ test failed:', websocketError);
+      websocketStatus = 'failed';
     }
 
     return res.status(200).json({
       status: httpResponse.ok ? 'reachable' : 'unreachable',
       details: `HTTP Status ${httpResponse.status}`,
       headers: Object.fromEntries(httpResponse.headers),
-      secureWebsocketStatus,
-      secureWebsocketError,
-      secureWebsocketCloseCode,
-      secureWebsocketCloseReason
+      websocketStatus,
+      websocketError,
+      websocketCloseCode,
+      websocketCloseReason
     });
   } catch (err) {
     console.error('❌ ONLYOFFICE server test failed:', err.message, err.stack);
     return res.status(500).json({
       error: `Failed to reach ONLYOFFICE server: ${err.message}`,
-      secureWebsocketStatus: 'failed',
-      secureWebsocketError: err.message,
-      secureWebsocketCloseCode: null,
-      secureWebsocketCloseReason: null
+      websocketStatus: 'failed',
+      websocketError: err.message,
+      websocketCloseCode: null,
+      websocketCloseReason: null
     });
   }
 });
+
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'Backend is healthy' });
 });
@@ -437,8 +436,8 @@ app.get('/generate-doc-token', async (req, res) => {
     document: {
       fileType: 'docx',
       title: key.split('/').pop(),
-      url: data.signedUrl,
-      key: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      url: data.signedUrl || 'http://24.144.90.236:8080/docs/sample.docx', // Fallback to static file
+      key: `test_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       permissions: { edit: false, download: true }
     },
     editorConfig: {
