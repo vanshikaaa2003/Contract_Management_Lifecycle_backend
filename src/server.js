@@ -1,3 +1,5 @@
+
+// server.js — backend for AccordWise + ONLYOFFICE — UPDATED for JWT fix
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -182,9 +184,9 @@ app.post('/onlyoffice-callback', async (req, res) => {
     if (body.token) {
       try {
         const decoded = jwt.verify(body.token, JWT_SECRET);
-        console.log('✅ JWT token verified:', decoded);
+        console.log('✅ JWT token verified:', JSON.stringify(decoded, null, 2));
       } catch (err) {
-        console.error('❌ JWT verification failed:', err.message);
+        console.error('❌ JWT verification failed:', err.message, err.stack);
         return res.status(400).json({ error: 'Invalid JWT token' });
       }
     }
@@ -368,17 +370,32 @@ app.post('/generate-doc-token', async (req, res) => {
     config.document.url = data?.signedUrl || 'http://24.144.90.236:8080/docs/sample.docx';
     config.document.key = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-    // Structure payload for OnlyOffice JWT
+    // Structure payload per OnlyOffice JWT requirements
     const payload = {
-      payload: {
-        document: config.document,
-        editorConfig: config.editorConfig,
-        documentType: config.documentType
+      document: {
+        fileType: config.document.fileType,
+        key: config.document.key,
+        title: config.document.title,
+        url: config.document.url,
+        permissions: config.document.permissions
+      },
+      documentType: config.documentType,
+      editorConfig: {
+        callbackUrl: config.editorConfig.callbackUrl,
+        lang: config.editorConfig.lang,
+        mode: config.editorConfig.mode,
+        user: config.editorConfig.user,
+        customization: config.editorConfig.customization,
+        custom: config.editorConfig.custom
       }
     };
 
-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '3h' });
+    const token = jwt.sign(payload, JWT_SECRET, {
+      expiresIn: '3h',
+      header: { alg: 'HS256', typ: 'JWT' }
+    });
     console.log('✅ Generated JWT token:', token);
+    console.log('JWT payload:', JSON.stringify(payload, null, 2));
     res.json({ token, config });
   } catch (err) {
     console.error('❌ Generate doc token error:', err.message, err.stack);
