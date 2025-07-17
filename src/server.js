@@ -1,5 +1,5 @@
 
-// server.js — backend for AccordWise + ONLYOFFICE — UPDATED for JWT fix
+// server.js — backend for AccordWise + ONLYOFFICE — UPDATED for JWT secret fix
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -31,7 +31,7 @@ async function signedUrl(relPath, expires = 60 * 30) {
 }
 
 const ONLYOFFICE_BASE = 'http://24.144.90.236:8080';
-const JWT_SECRET = 'ZxdBdcDE5m275qnzdGUQ'; // Matches local.json secretString
+const JWT_SECRET = '7MKdHWqYSq72PpviJA58Zr8ULUuYSUxK'; // Matches local.json secret.inbox/outbox.string
 
 // Store recent callbacks for verification
 const recentCallbacks = [];
