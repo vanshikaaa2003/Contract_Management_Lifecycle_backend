@@ -28,16 +28,16 @@ async function signedUrl(relPath, expires = 60 * 30) {
   return supaSrv.storage.from(BUCKET).createSignedUrl(key, expires);
 }
 
-const ONLYOFFICE_BASE = 'http://24.144.90.236:8080'; // Container port
-const JWT_SECRET = process.env.JWT_SECRET || '90622eb052254ec9a1592d118d81b6c7';
+const ONLYOFFICE_BASE = 'http://24.144.90.236:8080';
+const JWT_SECRET = 'ZxdBdcDE5m275qnzdGUQ'; // Matches local.json secretString
 
-// Store recent callbacks for verification (in-memory, use DB in production)
+// Store recent callbacks for verification
 const recentCallbacks = [];
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// CORS setup for frontend and ONLYOFFICE server
+// CORS setup
 app.use(cors({
   origin: [
     'http://accordwise-frontend.z2wjeuucks-xlm41xrvw6dy.p.temp-site.link',
@@ -74,19 +74,25 @@ app.use('/static', express.static(STATIC_DIR, {
   setHeaders: (res) => res.setHeader('Access-Control-Allow-Origin', '*')
 }));
 
-// File copy route for initial template creation
+// File copy route
 app.post('/copy-template-doc', async (req, res) => {
   const { sourcePath, destinationPath } = req.body;
   try {
     const { data, error: downloadErr } = await supaSrv.storage.from(BUCKET).download(sourcePath);
-    if (downloadErr) return res.status(500).json({ error: downloadErr.message });
+    if (downloadErr) {
+      console.error('❌ Download error:', downloadErr.message);
+      return res.status(500).json({ error: downloadErr.message });
+    }
 
     const { error: uploadErr } = await supaSrv.storage.from(BUCKET).upload(destinationPath, data, {
       upsert: true,
       contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     });
 
-    if (uploadErr) return res.status(500).json({ error: uploadErr.message });
+    if (uploadErr) {
+      console.error('❌ Upload error:', uploadErr.message);
+      return res.status(500).json({ error: uploadErr.message });
+    }
 
     res.json({ message: 'File copied successfully', destinationPath });
   } catch (err) {
@@ -117,7 +123,10 @@ app.post('/upload', upload, async (req, res) => {
     const relPath = req.body.path;
     if (!relPath || !req.file) return res.status(400).json({ error: 'Missing file or path' });
     const { error } = await uploadBuffer(relPath, req.file.buffer, req.file.mimetype, true);
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Supabase upload error:', error.message);
+      throw error;
+    }
     res.json({ message: 'File uploaded', storagePath: relPath });
   } catch (err) {
     console.error('❌ Upload error:', err.message, err.stack);
@@ -162,7 +171,6 @@ app.post('/onlyoffice-callback', async (req, res) => {
     console.log('📩 ONLYOFFICE callback received at', new Date().toISOString(), ':', JSON.stringify(body, null, 2));
     console.log('📩 Request headers:', JSON.stringify(req.headers, null, 2));
 
-    // Store callback for verification
     recentCallbacks.push({
       timestamp: Date.now(),
       key: body.key,
@@ -171,7 +179,6 @@ app.post('/onlyoffice-callback', async (req, res) => {
     });
     if (recentCallbacks.length > 10) recentCallbacks.shift();
 
-    // Verify JWT token if present
     if (body.token) {
       try {
         const decoded = jwt.verify(body.token, JWT_SECRET);
@@ -182,13 +189,11 @@ app.post('/onlyoffice-callback', async (req, res) => {
       }
     }
 
-    // Validate payload
     if (!body || !body.status) {
       console.error('❌ Invalid payload: missing status');
       return res.status(400).json({ error: 'Invalid ONLYOFFICE callback payload: missing status' });
     }
 
-    // Handle status 2 (document saved) or status 6 (error)
     if (body.status === 2) {
       if (!body.url || !body.key) {
         console.error('❌ Invalid payload: missing url or key', { url: body.url, key: body.key });
@@ -244,7 +249,7 @@ app.post('/onlyoffice-callback', async (req, res) => {
   }
 });
 
-// Endpoint to check recent callbacks
+// Check recent callbacks
 app.get('/check-callback', async (req, res) => {
   const { key } = req.query;
   if (!key) {
@@ -257,7 +262,7 @@ app.get('/check-callback', async (req, res) => {
   return res.status(200).json({ received: false });
 });
 
-// Test endpoint to simulate ONLYOFFICE callback
+// Test ONLYOFFICE callback
 app.post('/test-onlyoffice-callback', async (req, res) => {
   try {
     const { bucketPath } = req.body;
@@ -318,36 +323,23 @@ app.post('/test-onlyoffice-callback', async (req, res) => {
 app.get('/test-onlyoffice', async (req, res) => {
   try {
     console.log(`Testing ONLYOFFICE HTTP connectivity to ${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js at ${new Date().toISOString()}`);
-    let httpStatus = 'unreachable';
-    let httpError = null;
-    try {
-      const httpResponse = await fetch(`${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`, {
-        method: 'HEAD',
-        timeout: 5000
-      });
-      httpStatus = httpResponse.ok ? 'reachable' : 'unreachable';
-      if (!httpResponse.ok) {
-        httpError = `HTTP ${httpResponse.status}: ${httpResponse.statusText}`;
-        console.error('❌ ONLYOFFICE HTTP server not reachable:', httpResponse.status, httpResponse.statusText);
-        return res.status(500).json({
-          error: `ONLYOFFICE HTTP server not reachable: ${httpError}`,
-          status: httpStatus
-        });
-      }
-      console.log('✅ ONLYOFFICE HTTP server reachable at', ONLYOFFICE_BASE, 'Status:', httpResponse.status, 'Headers:', JSON.stringify(Object.fromEntries(httpResponse.headers), null, 2));
-      return res.status(200).json({
-        status: httpStatus,
-        details: `HTTP Status ${httpResponse.status}`,
-        headers: Object.fromEntries(httpResponse.headers)
-      });
-    } catch (err) {
-      httpError = err.message;
-      console.error('❌ ONLYOFFICE HTTP test failed:', httpError);
+    const httpResponse = await fetch(`${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`, {
+      method: 'HEAD',
+      timeout: 5000
+    });
+    if (!httpResponse.ok) {
+      console.error('❌ ONLYOFFICE HTTP server not reachable:', httpResponse.status, httpResponse.statusText);
       return res.status(500).json({
-        error: `Failed to reach ONLYOFFICE server: ${httpError}`,
-        status: httpStatus
+        error: `ONLYOFFICE HTTP server not reachable: HTTP ${httpResponse.status} ${httpResponse.statusText}`,
+        status: 'unreachable'
       });
     }
+    console.log('✅ ONLYOFFICE HTTP server reachable at', ONLYOFFICE_BASE, 'Status:', httpResponse.status, 'Headers:', JSON.stringify(Object.fromEntries(httpResponse.headers), null, 2));
+    return res.status(200).json({
+      status: 'reachable',
+      details: `HTTP Status ${httpResponse.status}`,
+      headers: Object.fromEntries(httpResponse.headers)
+    });
   } catch (err) {
     console.error('❌ ONLYOFFICE server test failed:', err.message, err.stack);
     return res.status(500).json({
@@ -376,7 +368,17 @@ app.post('/generate-doc-token', async (req, res) => {
     config.document.url = data?.signedUrl || 'http://24.144.90.236:8080/docs/sample.docx';
     config.document.key = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-    const token = jwt.sign(config, JWT_SECRET, { expiresIn: '3h' });
+    // Structure payload for OnlyOffice JWT
+    const payload = {
+      payload: {
+        document: config.document,
+        editorConfig: config.editorConfig,
+        documentType: config.documentType
+      }
+    };
+
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '3h' });
+    console.log('✅ Generated JWT token:', token);
     res.json({ token, config });
   } catch (err) {
     console.error('❌ Generate doc token error:', err.message, err.stack);
