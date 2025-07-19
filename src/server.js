@@ -1,13 +1,10 @@
-
-// server.js — backend for AccordWise + ONLYOFFICE — UPDATED for JWT secret fix
+// server.js — backend for AccordWise + ONLYOFFICE — UPDATED for blank.docx and cleanup
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const fetch = require('node-fetch');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const { createClient } = require('@supabase/supabase-js');
 
 // Supabase service client
@@ -31,7 +28,7 @@ async function signedUrl(relPath, expires = 60 * 30) {
 }
 
 const ONLYOFFICE_BASE = 'http://24.144.90.236:8080';
-const JWT_SECRET = '7MKdHWqYSq72PpviJA58Zr8ULUuYSUxK'; // Matches local.json secret.inbox/outbox.string
+const JWT_SECRET = 'mfkRj7WnJVc32kzJZjgxdVErG87xyqxj'; // Matches local.json secret.inbox/outbox.string
 
 // Store recent callbacks for verification
 const recentCallbacks = [];
@@ -58,23 +55,6 @@ app.use((req, res, next) => {
   console.log('Body:', JSON.stringify(req.body, null, 2));
   next();
 });
-
-// Static docs directory
-const STATIC_DIR = path.join(__dirname, '..', 'static');
-const BLANK_PATH = path.join(STATIC_DIR, 'blank.docx');
-
-app.get('/blank.docx', (req, res) => {
-  if (!fs.existsSync(BLANK_PATH)) {
-    console.error('[blank.docx] Missing at', BLANK_PATH);
-    return res.status(404).json({ error: 'blank.docx not found' });
-  }
-  res.type('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-  fs.createReadStream(BLANK_PATH).pipe(res);
-});
-
-app.use('/static', express.static(STATIC_DIR, {
-  setHeaders: (res) => res.setHeader('Access-Control-Allow-Origin', '*')
-}));
 
 // File copy route
 app.post('/copy-template-doc', async (req, res) => {
@@ -321,26 +301,25 @@ app.post('/test-onlyoffice-callback', async (req, res) => {
   }
 });
 
-// Test ONLYOFFICE connectivity (HTTP only)
+// Test ONLYOFFICE connectivity
 app.get('/test-onlyoffice', async (req, res) => {
   try {
-    console.log(`Testing ONLYOFFICE HTTP connectivity to ${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js at ${new Date().toISOString()}`);
+    console.log(`Testing ONLYOFFICE connectivity to ${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js at ${new Date().toISOString()}`);
     const httpResponse = await fetch(`${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`, {
       method: 'HEAD',
       timeout: 5000
     });
     if (!httpResponse.ok) {
-      console.error('❌ ONLYOFFICE HTTP server not reachable:', httpResponse.status, httpResponse.statusText);
+      console.error('❌ ONLYOFFICE server not reachable:', httpResponse.status, httpResponse.statusText);
       return res.status(500).json({
-        error: `ONLYOFFICE HTTP server not reachable: HTTP ${httpResponse.status} ${httpResponse.statusText}`,
+        error: `ONLYOFFICE server not reachable: HTTP ${httpResponse.status} ${httpResponse.statusText}`,
         status: 'unreachable'
       });
     }
-    console.log('✅ ONLYOFFICE HTTP server reachable at', ONLYOFFICE_BASE, 'Status:', httpResponse.status, 'Headers:', JSON.stringify(Object.fromEntries(httpResponse.headers), null, 2));
+    console.log('✅ ONLYOFFICE server reachable at', ONLYOFFICE_BASE, 'Status:', httpResponse.status);
     return res.status(200).json({
       status: 'reachable',
-      details: `HTTP Status ${httpResponse.status}`,
-      headers: Object.fromEntries(httpResponse.headers)
+      details: `HTTP Status ${httpResponse.status}`
     });
   } catch (err) {
     console.error('❌ ONLYOFFICE server test failed:', err.message, err.stack);
@@ -367,7 +346,7 @@ app.post('/generate-doc-token', async (req, res) => {
       return res.status(500).json({ error: error.message });
     }
 
-    config.document.url = data?.signedUrl || 'http://24.144.90.236:8080/docs/sample.docx';
+    config.document.url = data?.signedUrl || `${ONLYOFFICE_BASE}/docs/blank.docx`; // Updated to blank.docx
     config.document.key = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
     // Structure payload per OnlyOffice JWT requirements
