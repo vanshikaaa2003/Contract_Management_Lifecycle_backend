@@ -130,7 +130,7 @@ app.get('/signed-url', async (req, res) => {
     const key = bucketPath.replace(/^accordwise-files\//, '');
     const { data, error } = await supaSrv
       .storage
-      .from('accordwise-files')
+      .from('accordmatched wise-files')
       .createSignedUrl(key, Number(expires) || 1800);
 
     if (error) {
@@ -356,6 +356,7 @@ app.get('/proxy-document', async (req, res) => {
     const buffer = await response.buffer();
     res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.set('Access-Control-Allow-Origin', '*');
+    console.log('✅ Proxy fetch successful for:', url);
     res.send(buffer);
   } catch (err) {
     console.error('❌ Proxy fetch error:', err.message, err.stack);
@@ -379,7 +380,13 @@ app.post('/generate-doc-token', async (req, res) => {
       return res.status(500).json({ error: error.message });
     }
 
-    config.document.url = data?.signedUrl || `${ONLYOFFICE_BASE}/docs/blank.docx`; // Updated to blank.docx
+    // Use the provided config.document.url (proxied URL) instead of overwriting
+    if (!data?.signedUrl) {
+      console.log('ℹ️ No signed URL for bucketPath, using provided config.document.url:', config.document.url);
+    } else {
+      config.document.url = data.signedUrl;
+      console.log('✅ Using signed URL for bucketPath:', config.document.url);
+    }
     config.document.key = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
     // Structure payload per OnlyOffice JWT requirements
