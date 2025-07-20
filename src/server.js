@@ -31,7 +31,7 @@ async function signedUrl(relPath, expires = 60 * 30) {
 }
 
 const ONLYOFFICE_BASE = 'https://24.144.90.236';
-const JWT_SECRET = 'mfkRj7WnJVc32kzJZjgxdVErG87xyqxj'; // Matches local.json secret.inbox/outbox.string
+const JWT_SECRET = 'xbchclj7arCvsS4vjkYr7TDPsRENyw98'; // Matches local.json secret.inbox/outbox.string
 
 // Store recent callbacks for verification
 const recentCallbacks = [];
