@@ -27,7 +27,7 @@ async function signedUrl(relPath, expires = 60 * 30) {
   return supaSrv.storage.from(BUCKET).createSignedUrl(key, expires);
 }
 
-const ONLYOFFICE_BASE = 'http://24.144.90.236:8080';
+const ONLYOFFICE_BASE = 'https://24.144.90.236';
 const JWT_SECRET = 'mfkRj7WnJVc32kzJZjgxdVErG87xyqxj'; // Matches local.json secret.inbox/outbox.string
 
 // Store recent callbacks for verification
