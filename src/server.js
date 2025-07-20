@@ -1,11 +1,14 @@
-// server.js — backend for AccordWise + ONLYOFFICE — UPDATED for blank.docx and cleanup
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const fetch = require('node-fetch');
+const https = require('https');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
+
+// Create HTTPS agent to bypass self-signed certificate
+const agent = new https.Agent({ rejectUnauthorized: false });
 
 // Supabase service client
 const supaSrv = createClient(
@@ -191,6 +194,7 @@ app.post('/onlyoffice-callback', async (req, res) => {
       console.log('📥 Fetching document from:', body.url);
       try {
         const documentResponse = await fetch(body.url, {
+          agent, // Bypass self-signed certificate
           headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
         });
         if (!documentResponse.ok) {
@@ -273,6 +277,7 @@ app.post('/test-onlyoffice-callback', async (req, res) => {
     console.log('📩 Simulating callback with payload:', JSON.stringify(testPayload, null, 2));
 
     const documentResponse = await fetch(testPayload.url, {
+      agent, // Bypass self-signed certificate
       headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
     });
     if (!documentResponse.ok) {
@@ -307,6 +312,7 @@ app.get('/test-onlyoffice', async (req, res) => {
     console.log(`Testing ONLYOFFICE connectivity to ${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js at ${new Date().toISOString()}`);
     const httpResponse = await fetch(`${ONLYOFFICE_BASE}/web-apps/apps/api/documents/api.js`, {
       method: 'HEAD',
+      agent, // Bypass self-signed certificate
       timeout: 5000
     });
     if (!httpResponse.ok) {
@@ -327,6 +333,33 @@ app.get('/test-onlyoffice', async (req, res) => {
       error: `Failed to reach ONLYOFFICE server: ${err.message}`,
       status: 'unreachable'
     });
+  }
+});
+
+// Proxy document fetch to bypass browser certificate issues
+app.get('/proxy-document', async (req, res) => {
+  try {
+    const { url } = req.query;
+    if (!url || !url.startsWith('https://24.144.90.236/docs/')) {
+      console.error('❌ Invalid proxy URL:', url);
+      return res.status(400).json({ error: 'Invalid URL' });
+    }
+    console.log('📥 Proxy fetching document from:', url);
+    const response = await fetch(url, {
+      agent, // Bypass self-signed certificate
+      headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
+    });
+    if (!response.ok) {
+      console.error('❌ Proxy fetch failed:', response.status, response.statusText);
+      return res.status(response.status).json({ error: response.statusText });
+    }
+    const buffer = await response.buffer();
+    res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.set('Access-Control-Allow-Origin', '*');
+    res.send(buffer);
+  } catch (err) {
+    console.error('❌ Proxy fetch error:', err.message, err.stack);
+    res.status(500).json({ error: err.message });
   }
 });
 
