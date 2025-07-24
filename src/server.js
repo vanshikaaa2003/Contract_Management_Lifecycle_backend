@@ -130,7 +130,7 @@ app.get('/signed-url', async (req, res) => {
     const key = bucketPath.replace(/^accordwise-files\//, '');
     const { data, error } = await supaSrv
       .storage
-      .from('accordmatched wise-files')
+      .from('accordwise-files')
       .createSignedUrl(key, Number(expires) || 1800);
 
     if (error) {
