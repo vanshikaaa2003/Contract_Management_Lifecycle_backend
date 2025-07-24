@@ -380,7 +380,7 @@ app.post('/generate-doc-token', async (req, res) => {
       return res.status(500).json({ error: error.message });
     }
 
-    // Use the provided config.document.url (proxied URL) instead of overwriting
+    // Use the provided config.document.url (proxied URL) or signed URL
     if (!data?.signedUrl) {
       console.log('ℹ️ No signed URL for bucketPath, using provided config.document.url:', config.document.url);
     } else {
@@ -388,6 +388,10 @@ app.post('/generate-doc-token', async (req, res) => {
       console.log('✅ Using signed URL for bucketPath:', config.document.url);
     }
     config.document.key = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+    // Ensure editorConfig exists, provide default callbackUrl
+    const editorConfig = config.editorConfig || {};
+    editorConfig.callbackUrl = editorConfig.callbackUrl || 'http://accordwise-backend.z2wjeuucks-xlm41xrvw6dy.p.temp-site.link/onlyoffice-callback';
 
     // Structure payload per OnlyOffice JWT requirements
     const payload = {
@@ -400,28 +404,27 @@ app.post('/generate-doc-token', async (req, res) => {
       },
       documentType: config.documentType,
       editorConfig: {
-        callbackUrl: config.editorConfig.callbackUrl,
-        lang: config.editorConfig.lang,
-        mode: config.editorConfig.mode,
-        user: config.editorConfig.user,
-        customization: config.editorConfig.customization,
-        custom: config.editorConfig.custom
+        callbackUrl: editorConfig.callbackUrl,
+        lang: editorConfig.lang,
+        mode: editorConfig.mode,
+        user: editorConfig.user,
+        customization: editorConfig.customization,
+        custom: editorConfig.custom
       }
     };
 
-    const token = jwt.sign(payload, JWT_SECRET, {
+    const token = jwt.sign(payload, process.env.JWT_SECRET || 'your_jwt_secret', {
       expiresIn: '3h',
       header: { alg: 'HS256', typ: 'JWT' }
     });
     console.log('✅ Generated JWT token:', token);
     console.log('JWT payload:', JSON.stringify(payload, null, 2));
-    res.json({ token, config });
+    res.json({ token, config: payload });
   } catch (err) {
     console.error('❌ Generate doc token error:', err.message, err.stack);
     res.status(500).json({ error: err.message });
   }
 });
-
 app.use((err, req, res, next) => {
   console.error('❌ Unhandled error:', err.message, err.stack);
   res.status(500).json({ error: err.message });
